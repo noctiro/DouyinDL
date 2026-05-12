@@ -37,9 +37,9 @@ jobs:
           VERSION=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           
-          # 从 CHANGELOG.md 提取对应条目的标题行，去掉前缀 "## "
-          # 例：## [1.1.0] - 2026-05-12  →  [1.1.0] - 2026-05-12
-          CHANGELOG_TITLE=$(grep -m1 "^## \[${VERSION}\]" CHANGELOG.md | sed 's/^## //')
+          # 从 CHANGELOG.md 提取对应条目的标题行
+          # 例：## [1.1.0] - 2026-05-12  →  1.1.0 - 2026-05-12
+          CHANGELOG_TITLE=$(grep -m1 "^## \[${VERSION}\]" CHANGELOG.md | sed 's/^## \[//;s/\]//')
           echo "changelog_title=$CHANGELOG_TITLE" >> "$GITHUB_OUTPUT"
           
           if echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-.+'; then
