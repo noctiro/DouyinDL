@@ -1,7 +1,6 @@
 package com.noctiro.douyindl
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,14 +23,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -62,7 +57,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -70,6 +64,7 @@ import coil3.compose.AsyncImage
 import com.noctiro.douyindl.data.VideoInfo
 import com.noctiro.douyindl.ui.theme.DouyinDLTheme
 import androidx.core.net.toUri
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,7 +107,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     if (showAbout) {
         AlertDialog(
-            onDismissRequest = { showAbout = false },
+            onDismissRequest = { },
             icon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text("DouyinDL") },
             text = {
@@ -150,7 +145,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 }) { Text("GitHub") }
             },
             dismissButton = {
-                TextButton(onClick = { showAbout = false }) { Text("关闭") }
+                TextButton(onClick = { }) { Text("关闭") }
             }
         )
     }
@@ -164,7 +159,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 title = { Text("抖音视频下载") },
                 scrollBehavior = scrollBehavior,
                 actions = {
-                    IconButton(onClick = { showAbout = true }) {
+                    IconButton(onClick = { }) {
                         Icon(Icons.Default.Info, contentDescription = "关于")
                     }
                 }
@@ -221,7 +216,10 @@ private fun InputSection(vm: MainViewModel) {
                 IconButton(onClick = {
                     val cm = context.getSystemService(android.content.ClipboardManager::class.java)
                     val text = cm?.primaryClip?.getItemAt(0)?.text?.toString()
-                    if (!text.isNullOrBlank()) vm.updateInput(text)
+                    if (!text.isNullOrBlank()) {
+                        vm.updateInput(text)
+                        vm.parseUrl()
+                    }
                 }) {
                     Icon(Icons.Default.ContentPaste, contentDescription = "粘贴")
                 }
@@ -378,14 +376,23 @@ private fun DownloadSection(vm: MainViewModel) {
             }
         }
         DownloadState.Failed -> {
-            FilledTonalButton(
-                onClick = { vm.downloadVideo() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("下载失败，点击重试")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                vm.downloadFailReason?.let { reason ->
+                    Text(
+                        text = reason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                FilledTonalButton(
+                    onClick = { vm.downloadVideo() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("下载失败，点击重试")
+                    }
                 }
             }
         }
@@ -401,8 +408,8 @@ private fun formatFileSize(bytes: Long): String {
         value /= 1024
         unitIndex++
     }
-    return if (unitIndex == 0) "${bytes} B"
-    else String.format("%.1f %s", value, units[unitIndex])
+    return if (unitIndex == 0) "$bytes B"
+    else String.format(Locale.US, "%.1f %s", value, units[unitIndex])
 }
 
 @Composable

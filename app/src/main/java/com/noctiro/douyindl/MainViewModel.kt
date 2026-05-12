@@ -3,14 +3,14 @@ package com.noctiro.douyindl
 import android.app.Application
 import android.app.DownloadManager
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.noctiro.douyindl.data.DouyinParser
@@ -19,11 +19,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.core.net.toUri
 
 enum class ParseState {
     Idle, Loading, Success, Error
@@ -64,7 +59,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var downloadSpeed by mutableLongStateOf(0L)
         private set
 
+    var downloadFailReason by mutableStateOf<String?>(null)
+        private set
+
     private var downloadId: Long = -1L
+    private var downloadedFileUri: Uri? = null
 
     fun updateInput(text: String) {
         inputUrl = text
@@ -124,6 +123,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         downloadProgress = 0f
         downloadedBytes = 0L
         downloadSpeed = 0L
+        downloadFailReason = null
 
         viewModelScope.launch {
             pollDownloadProgress(dm, downloadId)
@@ -131,15 +131,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun fetchFileSize(info: VideoInfo) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             try {
-                val conn = URL(info.url).openConnection() as HttpURLConnection
-                conn.requestMethod = "HEAD"
-                conn.setRequestProperty("User-Agent", info.userAgent)
-                conn.connect()
-                val length = conn.contentLength.toLong()
+                val length = parser.fetchFileSize(info.url, info.userAgent)
                 if (length > 0) totalBytes = length
-                conn.disconnect()
             } catch (_: Exception) { }
         }
     }
@@ -169,10 +164,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             downloadedBytes = bytesTotal
                             totalBytes = bytesTotal
                             downloadSpeed = 0L
+                            downloadedFileUri = dm.getUriForDownloadedFile(id)
                             downloadState = DownloadState.Completed
                             return@withContext
                         }
                         DownloadManager.STATUS_FAILED -> {
+                            val reason = cursor.getInt(
+                                cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)
+                            )
+                            downloadFailReason = mapDownloadError(reason)
                             downloadState = DownloadState.Failed
                             return@withContext
                         }
@@ -201,29 +201,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun getDownloadedFileUri(): Uri? {
-        val info = videoInfo ?: return null
-        val file = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
-            "DouyinDL/${info.title}.mp4"
-        )
-        if (!file.exists()) return null
-        val context = getApplication<Application>()
-        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-    }
-
-    fun getDownloadedDirIntent(): Intent {
-        val dir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
-            "DouyinDL"
-        )
-        dir.mkdirs()
-        val uri = Uri.parse("content://com.android.externalstorage.documents/document/primary%3AMovies%2FDouyinDL")
-        return Intent(Intent.ACTION_VIEW).apply {
-            data = uri
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-    }
+    fun getDownloadedFileUri(): Uri? = downloadedFileUri
 
     fun reset() {
         inputUrl = ""
@@ -235,5 +213,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         totalBytes = -1L
         downloadedBytes = 0L
         downloadSpeed = 0L
+        downloadFailReason = null
+        downloadedFileUri = null
+    }
+
+    private fun mapDownloadError(reason: Int): String = when (reason) {
+        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "存储空间不足"
+        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "未找到存储设备"
+        DownloadManager.ERROR_HTTP_DATA_ERROR -> "网络数据错误"
+        DownloadManager.ERROR_CANNOT_RESUME -> "无法恢复下载"
+        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "重定向次数过多"
+        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "服务器返回错误"
+        DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "文件已存在"
+        else -> "下载失败 (错误码: $reason)"
     }
 }

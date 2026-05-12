@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 @Serializable
 data class VideoInfo(
@@ -41,6 +42,8 @@ class DouyinParser {
 
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -48,7 +51,7 @@ class DouyinParser {
     suspend fun parseShareUrl(shareText: String): VideoInfo = withContext(Dispatchers.IO) {
         val ua = randomUserAgent()
 
-        val urlPattern = Regex("""https?://[^\s]+""")
+        val urlPattern = Regex("""https?://\S+""")
         val shareUrl = urlPattern.find(shareText)?.value
             ?: throw IllegalArgumentException("未找到有效的分享链接")
 
@@ -57,9 +60,9 @@ class DouyinParser {
             .header("User-Agent", ua)
             .build()
 
-        val redirectResponse = client.newCall(redirectRequest).execute()
-        val finalUrl = redirectResponse.request.url.toString()
-        redirectResponse.close()
+        val finalUrl = client.newCall(redirectRequest).execute().use { response ->
+            response.request.url.toString()
+        }
 
         val videoId = finalUrl.split("?")[0].trimEnd('/').split("/").last()
         val iesdUrl = "https://www.iesdouyin.com/share/video/$videoId"
@@ -69,9 +72,9 @@ class DouyinParser {
             .header("User-Agent", ua)
             .build()
 
-        val pageResponse = client.newCall(pageRequest).execute()
-        val html = pageResponse.body?.string() ?: throw Exception("获取页面内容失败")
-        pageResponse.close()
+        val html = client.newCall(pageRequest).execute().use { response ->
+            response.body?.string() ?: throw Exception("获取页面内容失败")
+        }
 
         val pattern = Regex("""window\._ROUTER_DATA\s*=\s*(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
         val matchResult = pattern.find(html) ?: throw Exception("从HTML中解析视频信息失败")
@@ -123,5 +126,16 @@ class DouyinParser {
             coverUrl = coverUrl,
             userAgent = ua
         )
+    }
+
+    suspend fun fetchFileSize(url: String, userAgent: String): Long = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(url)
+            .head()
+            .header("User-Agent", userAgent)
+            .build()
+        client.newCall(request).execute().use { response ->
+            response.header("Content-Length")?.toLongOrNull() ?: -1L
+        }
     }
 }
