@@ -1,6 +1,5 @@
 package com.noctiro.douyindl.download
 
-import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
@@ -9,14 +8,20 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.net.toUri
 import com.noctiro.douyindl.data.VideoInfo
+import com.noctiro.douyindl.util.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.Request
+import java.io.File
+import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicLong
 
 enum class DownloadState {
     Idle, Downloading, Completed, Failed
@@ -45,49 +50,56 @@ class VideoDownloader(private val appContext: Context) {
     var downloadFailReason by mutableStateOf<String?>(null)
         private set
 
-    private var downloadId: Long = -1L
     private var downloadedFileUri: Uri? = null
-    private var pollJob: Job? = null
+    private var downloadJob: Job? = null
+    @Volatile
+    private var cancelled = false
+
+    private val client = HttpClient.instance
+
+    companion object {
+        private const val BUFFER_SIZE = 8192
+        private const val MIN_CHUNK_SIZE = 512 * 1024L // 512KB
+
+        fun threadCountFor(fileSize: Long): Int = when {
+            fileSize < 1 * 1024 * 1024 -> 1        // < 1MB: 单线程
+            fileSize < 10 * 1024 * 1024 -> 2       // 1-10MB: 2线程
+            fileSize < 50 * 1024 * 1024 -> 4       // 10-50MB: 4线程
+            else -> 8                               // > 50MB: 8线程
+        }
+    }
 
     fun start(info: VideoInfo, scope: CoroutineScope) {
         if (downloadState == DownloadState.Downloading) return
 
-        val dm = appContext.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-
-        val request = DownloadManager.Request(info.url.toUri()).apply {
-            setTitle(info.title)
-            setDescription("正在下载抖音视频")
-            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalPublicDir(
-                Environment.DIRECTORY_MOVIES,
-                "DouyinDL/${info.title}.mp4"
-            )
-            addRequestHeader("User-Agent", info.userAgent)
-        }
-
-        downloadId = dm.enqueue(request)
+        cancelled = false
         downloadState = DownloadState.Downloading
         downloadProgress = 0f
         downloadedBytes = 0L
         downloadSpeed = 0L
         etaSeconds = -1L
         downloadFailReason = null
+        downloadedFileUri = null
 
-        pollJob = scope.launch {
-            pollDownloadProgress(dm, downloadId)
+        downloadJob = scope.launch {
+            try {
+                download(info)
+            } catch (e: Exception) {
+                if (!cancelled) {
+                    downloadFailReason = e.message ?: "下载失败"
+                    downloadState = DownloadState.Failed
+                    etaSeconds = -1L
+                }
+            }
         }
     }
 
     fun cancel() {
         if (downloadState != DownloadState.Downloading) return
 
-        pollJob?.cancel()
-        pollJob = null
-
-        val dm = appContext.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        if (downloadId != -1L) {
-            dm.remove(downloadId)
-        }
+        cancelled = true
+        downloadJob?.cancel()
+        downloadJob = null
 
         downloadState = DownloadState.Idle
         downloadProgress = 0f
@@ -105,89 +117,131 @@ class VideoDownloader(private val appContext: Context) {
 
     fun getDownloadedFileUri(): Uri? = downloadedFileUri
 
-    private suspend fun pollDownloadProgress(dm: DownloadManager, id: Long) {
-        withContext(Dispatchers.IO) {
-            var lastBytes = 0L
-            var lastTime = System.currentTimeMillis()
-            while (true) {
-                val query = DownloadManager.Query().setFilterById(id)
-                val cursor = dm.query(query)
-                if (cursor != null && cursor.moveToFirst()) {
-                    val status = cursor.getInt(
-                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
-                    )
-                    val bytesDown = cursor.getLong(
-                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                    )
-                    val bytesTotal = cursor.getLong(
-                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-                    )
-                    cursor.close()
+    private suspend fun download(info: VideoInfo) = withContext(Dispatchers.IO) {
+        val contentLength = HttpClient.fetchContentLength(info.url, info.userAgent)
+        if (contentLength <= 0) throw Exception("无法获取文件大小")
 
-                    when (status) {
-                        DownloadManager.STATUS_SUCCESSFUL -> {
-                            downloadProgress = 1f
-                            downloadedBytes = bytesTotal
-                            totalBytes = bytesTotal
-                            downloadSpeed = 0L
-                            etaSeconds = 0L
-                            downloadedFileUri = dm.getUriForDownloadedFile(id)
-                            downloadState = DownloadState.Completed
-                            return@withContext
-                        }
-                        DownloadManager.STATUS_FAILED -> {
-                            val reason = cursor.getInt(
-                                cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)
-                            )
-                            downloadFailReason = mapDownloadError(reason)
-                            downloadState = DownloadState.Failed
-                            etaSeconds = -1L
-                            return@withContext
-                        }
-                        else -> {
-                            val now = System.currentTimeMillis()
-                            val elapsed = now - lastTime
-                            if (elapsed >= 500) {
-                                val instantSpeed = (bytesDown - lastBytes) * 1000 / elapsed
-                                downloadSpeed = if (downloadSpeed == 0L) {
-                                    instantSpeed
-                                } else {
-                                    (downloadSpeed * 3 + instantSpeed) / 4
-                                }
-                                lastBytes = bytesDown
-                                lastTime = now
-                            }
-                            downloadedBytes = bytesDown
-                            if (bytesTotal > 0) {
-                                totalBytes = bytesTotal
-                                downloadProgress = bytesDown.toFloat() / bytesTotal.toFloat()
-                                etaSeconds = if (downloadSpeed > 0) {
-                                    (bytesTotal - bytesDown) / downloadSpeed
-                                } else {
-                                    -1L
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    cursor?.close()
-                    downloadState = DownloadState.Failed
-                    etaSeconds = -1L
-                    return@withContext
+        totalBytes = contentLength
+
+        val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+        val outputDir = File(moviesDir, "DouyinDL")
+        if (!outputDir.exists()) outputDir.mkdirs()
+
+        val outputFile = File(outputDir, "${info.title}.mp4")
+        if (outputFile.exists()) outputFile.delete()
+
+        RandomAccessFile(outputFile, "rw").use { raf ->
+            raf.setLength(contentLength)
+        }
+
+        val threadCount = threadCountFor(contentLength)
+        val chunkSize = contentLength / threadCount
+        val downloaded = AtomicLong(0L)
+
+        val progressJob = launch {
+            trackProgress(downloaded, contentLength)
+        }
+
+        try {
+            val tasks = (0 until threadCount).map { i ->
+                val start = i * chunkSize
+                val end = if (i == threadCount - 1) contentLength - 1 else (start + chunkSize - 1)
+                async(Dispatchers.IO) {
+                    downloadChunk(info.url, info.userAgent, outputFile, start, end, downloaded)
                 }
-                delay(500L)
+            }
+            tasks.awaitAll()
+        } finally {
+            progressJob.cancel()
+        }
+
+        if (cancelled) {
+            outputFile.delete()
+            return@withContext
+        }
+
+        downloadedBytes = contentLength
+        downloadProgress = 1f
+        downloadSpeed = 0L
+        etaSeconds = 0L
+        downloadedFileUri = Uri.fromFile(outputFile)
+        downloadState = DownloadState.Completed
+
+        scanFile(outputFile)
+    }
+
+    private suspend fun downloadChunk(
+        url: String,
+        userAgent: String,
+        file: File,
+        start: Long,
+        end: Long,
+        downloaded: AtomicLong
+    ) {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", userAgent)
+            .header("Range", "bytes=$start-$end")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful && response.code != 206) {
+                throw Exception("分片下载失败: HTTP ${response.code}")
+            }
+
+            val body = response.body ?: throw Exception("响应体为空")
+            val input = body.byteStream()
+            val buffer = ByteArray(BUFFER_SIZE)
+
+            RandomAccessFile(file, "rw").use { raf ->
+                raf.seek(start)
+                var bytesRead: Int
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    if (cancelled) return
+                    raf.write(buffer, 0, bytesRead)
+                    downloaded.addAndGet(bytesRead.toLong())
+                }
             }
         }
     }
 
-    private fun mapDownloadError(reason: Int): String = when (reason) {
-        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "存储空间不足"
-        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "未找到存储设备"
-        DownloadManager.ERROR_HTTP_DATA_ERROR -> "网络数据错误"
-        DownloadManager.ERROR_CANNOT_RESUME -> "无法恢复下载"
-        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "重定向次数过多"
-        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "服务器返回错误"
-        DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "文件已存在"
-        else -> "下载失败 (错误码: $reason)"
+    private suspend fun trackProgress(downloaded: AtomicLong, total: Long) {
+        var lastBytes = 0L
+        var lastTime = System.currentTimeMillis()
+
+        while (true) {
+            delay(500L)
+            val currentBytes = downloaded.get()
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastTime
+
+            if (elapsed >= 500) {
+                val instantSpeed = (currentBytes - lastBytes) * 1000 / elapsed
+                downloadSpeed = if (downloadSpeed == 0L) {
+                    instantSpeed
+                } else {
+                    (downloadSpeed * 3 + instantSpeed) / 4
+                }
+                lastBytes = currentBytes
+                lastTime = now
+            }
+
+            downloadedBytes = currentBytes
+            downloadProgress = currentBytes.toFloat() / total.toFloat()
+            etaSeconds = if (downloadSpeed > 0) {
+                (total - currentBytes) / downloadSpeed
+            } else {
+                -1L
+            }
+        }
+    }
+
+    private fun scanFile(file: File) {
+        android.media.MediaScannerConnection.scanFile(
+            appContext,
+            arrayOf(file.absolutePath),
+            arrayOf("video/mp4"),
+            null
+        )
     }
 }

@@ -2,61 +2,29 @@ package com.noctiro.douyindl.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.OkHttpClient
+import com.noctiro.douyindl.util.HttpClient
 import okhttp3.Request
-import java.util.concurrent.TimeUnit
 
-@Serializable
-data class VideoInfo(
-    val url: String,
-    val title: String,
-    val videoId: String,
-    val coverUrl: String? = null,
-    val userAgent: String = ""
-)
+class DouyinParser : VideoParser {
 
-fun randomUserAgent(): String {
-    val osVersions = listOf("15_0", "15_4", "16_0", "16_3", "16_6", "17_0", "17_1", "17_2", "17_3", "17_4", "17_5", "18_0")
-    val safariVersions = listOf("604.1", "605.1.15")
-    val chromeVersions = listOf("120.0.6099.119", "121.0.6167.178", "122.0.6261.89", "122.0.6261.105", "123.0.6312.58", "124.0.6367.54")
-    val edgeVersions = listOf("121.0.2277.107", "122.0.2365.56", "122.0.2365.92", "123.0.2420.65")
-    val firefoxVersions = listOf("121.0", "122.0", "123.0", "124.0")
+    override val name = "抖音"
 
-    val os = "iPhone; CPU iPhone OS ${osVersions.random()} like Mac OS X"
-    val webkit = "AppleWebKit/605.1.15 (KHTML, like Gecko)"
-
-    return when ((0..3).random()) {
-        0 -> "Mozilla/5.0 ($os) $webkit Version/${osVersions.random().replace('_', '.')} Mobile/15E148 Safari/${safariVersions.random()}"
-        1 -> "Mozilla/5.0 ($os) $webkit CriOS/${chromeVersions.random()} Mobile/15E148 Safari/${safariVersions.random()}"
-        2 -> "Mozilla/5.0 ($os) $webkit EdgiOS/${edgeVersions.random()} Version/17.0 Mobile/15E148 Safari/${safariVersions.random()}"
-        else -> "Mozilla/5.0 ($os) $webkit FxiOS/${firefoxVersions.random()} Mobile/15E148 Safari/605.1.15"
-    }
-}
-
-class DouyinParser {
-
-    private val client = OkHttpClient.Builder()
-        .followRedirects(true)
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
+    private val client = HttpClient.instance
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun parseShareUrl(shareText: String): VideoInfo = withContext(Dispatchers.IO) {
+    override fun canParse(url: String): Boolean {
+        return url.contains("douyin.com") || url.contains("iesdouyin.com")
+    }
+
+    override suspend fun parse(url: String): VideoInfo = withContext(Dispatchers.IO) {
         val ua = randomUserAgent()
 
-        val urlPattern = Regex("""https?://\S+""")
-        val shareUrl = urlPattern.find(shareText)?.value
-            ?: throw IllegalArgumentException("未找到有效的分享链接")
-
         val redirectRequest = Request.Builder()
-            .url(shareUrl)
+            .url(url)
             .header("User-Agent", ua)
             .build()
 
@@ -124,18 +92,30 @@ class DouyinParser {
             title = safeTitle,
             videoId = videoId,
             coverUrl = coverUrl,
-            userAgent = ua
+            userAgent = ua,
+            source = name
         )
     }
 
-    suspend fun fetchFileSize(url: String, userAgent: String): Long = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(url)
-            .head()
-            .header("User-Agent", userAgent)
-            .build()
-        client.newCall(request).execute().use { response ->
-            response.header("Content-Length")?.toLongOrNull() ?: -1L
-        }
+    override suspend fun fetchFileSize(url: String, userAgent: String): Long {
+        return HttpClient.fetchContentLength(url, userAgent)
+    }
+}
+
+fun randomUserAgent(): String {
+    val osVersions = listOf("15_0", "15_4", "16_0", "16_3", "16_6", "17_0", "17_1", "17_2", "17_3", "17_4", "17_5", "18_0")
+    val safariVersions = listOf("604.1", "605.1.15")
+    val chromeVersions = listOf("120.0.6099.119", "121.0.6167.178", "122.0.6261.89", "122.0.6261.105", "123.0.6312.58", "124.0.6367.54")
+    val edgeVersions = listOf("121.0.2277.107", "122.0.2365.56", "122.0.2365.92", "123.0.2420.65")
+    val firefoxVersions = listOf("121.0", "122.0", "123.0", "124.0")
+
+    val os = "iPhone; CPU iPhone OS ${osVersions.random()} like Mac OS X"
+    val webkit = "AppleWebKit/605.1.15 (KHTML, like Gecko)"
+
+    return when ((0..3).random()) {
+        0 -> "Mozilla/5.0 ($os) $webkit Version/${osVersions.random().replace('_', '.')} Mobile/15E148 Safari/${safariVersions.random()}"
+        1 -> "Mozilla/5.0 ($os) $webkit CriOS/${chromeVersions.random()} Mobile/15E148 Safari/${safariVersions.random()}"
+        2 -> "Mozilla/5.0 ($os) $webkit EdgiOS/${edgeVersions.random()} Version/17.0 Mobile/15E148 Safari/${safariVersions.random()}"
+        else -> "Mozilla/5.0 ($os) $webkit FxiOS/${firefoxVersions.random()} Mobile/15E148 Safari/605.1.15"
     }
 }

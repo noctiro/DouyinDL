@@ -7,8 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.noctiro.douyindl.data.DouyinParser
 import com.noctiro.douyindl.data.VideoInfo
+import com.noctiro.douyindl.data.VideoParserManager
 import com.noctiro.douyindl.download.DownloadState
 import com.noctiro.douyindl.download.VideoDownloader
 import kotlinx.coroutines.launch
@@ -19,7 +19,7 @@ enum class ParseState {
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val parser = DouyinParser()
+    private val parserManager = VideoParserManager()
     val downloader = VideoDownloader(application)
 
     var inputUrl by mutableStateOf("")
@@ -40,6 +40,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val downloadState: DownloadState get() = downloader.downloadState
     val downloadProgress: Float get() = downloader.downloadProgress
     val downloadedBytes: Long get() = downloader.downloadedBytes
+    val downloadTotalBytes: Long get() = downloader.totalBytes
     val downloadSpeed: Long get() = downloader.downloadSpeed
     val downloadFailReason: String? get() = downloader.downloadFailReason
     val etaSeconds: Long get() = downloader.etaSeconds
@@ -62,7 +63,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val info = parser.parseShareUrl(inputUrl)
+                val info = parserManager.parse(inputUrl)
                 videoInfo = info
                 parseState = ParseState.Success
                 fetchFileSize(info)
@@ -94,7 +95,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun fetchFileSize(info: VideoInfo) {
         viewModelScope.launch {
             try {
-                val length = parser.fetchFileSize(info.url, info.userAgent)
+                val length = parserManager.fetchFileSize(info.url, info.userAgent)
                 if (length > 0) totalBytes = length
             } catch (_: Exception) { }
         }

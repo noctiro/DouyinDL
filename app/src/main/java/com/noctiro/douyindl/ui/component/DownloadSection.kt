@@ -81,8 +81,9 @@ internal fun DownloadSection(vm: MainViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    val sizeText = if (vm.totalBytes > 0) {
-                        "${formatFileSize(vm.downloadedBytes)} / ${formatFileSize(vm.totalBytes)}"
+                    val total = vm.downloadTotalBytes
+                    val sizeText = if (total > 0) {
+                        "${formatFileSize(vm.downloadedBytes)} / ${formatFileSize(total)}"
                     } else {
                         formatFileSize(vm.downloadedBytes)
                     }
