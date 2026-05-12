@@ -16,6 +16,7 @@ import androidx.lifecycle.viewModelScope
 import com.noctiro.douyindl.data.DouyinParser
 import com.noctiro.douyindl.data.VideoInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -64,6 +65,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var downloadId: Long = -1L
     private var downloadedFileUri: Uri? = null
+    private var pollJob: Job? = null
 
     fun updateInput(text: String) {
         inputUrl = text
@@ -125,9 +127,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         downloadSpeed = 0L
         downloadFailReason = null
 
-        viewModelScope.launch {
+        pollJob = viewModelScope.launch {
             pollDownloadProgress(dm, downloadId)
         }
+    }
+
+    fun cancelDownload() {
+        if (downloadState != DownloadState.Downloading) return
+
+        pollJob?.cancel()
+        pollJob = null
+
+        val context = getApplication<Application>()
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        if (downloadId != -1L) {
+            dm.remove(downloadId)
+        }
+
+        downloadState = DownloadState.Idle
+        downloadProgress = 0f
+        downloadedBytes = 0L
+        downloadSpeed = 0L
     }
 
     private fun fetchFileSize(info: VideoInfo) {
@@ -179,8 +199,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         else -> {
                             val now = System.currentTimeMillis()
                             val elapsed = now - lastTime
-                            if (elapsed > 0) {
-                                downloadSpeed = (bytesDown - lastBytes) * 1000 / elapsed
+                            if (elapsed >= 500) {
+                                val instantSpeed = (bytesDown - lastBytes) * 1000 / elapsed
+                                downloadSpeed = if (downloadSpeed == 0L) {
+                                    instantSpeed
+                                } else {
+                                    (downloadSpeed * 3 + instantSpeed) / 4
+                                }
                                 lastBytes = bytesDown
                                 lastTime = now
                             }
