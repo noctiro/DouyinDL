@@ -2,16 +2,6 @@ name: Build & Release
 
 on:
   workflow_dispatch:
-    inputs:
-      release_content:
-        description: 'Release 内容'
-        required: false
-        default: ''
-      prerelease:
-        description: '标记为预发布版本'
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   build:
@@ -46,6 +36,17 @@ jobs:
         run: |
           VERSION=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          
+          # 从 CHANGELOG.md 提取对应条目的标题行，去掉前缀 "## "
+          # 例：## [1.1.0] - 2026-05-12  →  [1.1.0] - 2026-05-12
+          CHANGELOG_TITLE=$(grep -m1 "^## \[${VERSION}\]" CHANGELOG.md | sed 's/^## //')
+          echo "changelog_title=$CHANGELOG_TITLE" >> "$GITHUB_OUTPUT"
+          
+          if echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-.+'; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build release APKs
         run: ./gradlew assembleRelease
@@ -72,14 +73,19 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           REPO="${{ github.repository }}"
-          CONTENT=$(cat <<'EOF'
-          ${{ inputs.release_content }}
-          EOF
-          )
+
+          # 提取版本条目正文：跳过标题行本身，截取到下一个 ## [ 或文件末尾
+          # awk 遇到 EOF 会自然退出，无需额外处理最后一个条目的情况
+          CHANGELOG_CONTENT=$(awk "
+            /^## \[${VERSION}\]/ { found=1; next }
+            found && /^## \[/    { exit }
+            found                { print }
+            END                  { }
+          " CHANGELOG.md)
 
           {
-            if [ -n "$(echo "$CONTENT" | tr -d '[:space:]')" ]; then
-              echo "$CONTENT"
+            if [ -n "$(echo "$CHANGELOG_CONTENT" | tr -d '[:space:]')" ]; then
+              echo "$CHANGELOG_CONTENT"
               echo ""
             fi
             echo "# 下载链接"
@@ -97,9 +103,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.changelog_title }}
           body_path: release_body.md
-          prerelease: ${{ inputs.prerelease }}
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
           files: artifacts/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
