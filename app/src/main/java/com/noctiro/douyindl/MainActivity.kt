@@ -1,6 +1,7 @@
 package com.noctiro.douyindl
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,11 +24,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,21 +48,28 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.noctiro.douyindl.data.VideoInfo
 import com.noctiro.douyindl.ui.theme.DouyinDLTheme
+import androidx.core.net.toUri
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +107,53 @@ private fun HandleShareIntent(intent: Intent?, vm: MainViewModel) {
 @Composable
 fun MainScreen(vm: MainViewModel = viewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    var showAbout by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    if (showAbout) {
+        AlertDialog(
+            onDismissRequest = { showAbout = false },
+            icon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("DouyinDL") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Text(
+                        text = "版本: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "作者: Noctiro",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "License: AGPL-3.0",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "一个简洁的抖音无水印视频下载工具",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW,
+                        "https://github.com/noctiro/DouyinDL".toUri())
+                    context.startActivity(intent)
+                }) { Text("GitHub") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAbout = false }) { Text("关闭") }
+            }
+        )
+    }
 
     Scaffold(
         modifier = Modifier
@@ -101,7 +162,12 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         topBar = {
             LargeTopAppBar(
                 title = { Text("抖音视频下载") },
-                scrollBehavior = scrollBehavior
+                scrollBehavior = scrollBehavior,
+                actions = {
+                    IconButton(onClick = { showAbout = true }) {
+                        Icon(Icons.Default.Info, contentDescription = "关于")
+                    }
+                }
             )
         }
     ) { innerPadding ->
@@ -168,17 +234,19 @@ private fun InputSection(vm: MainViewModel) {
         modifier = Modifier.fillMaxWidth(),
         enabled = vm.inputUrl.isNotBlank() && vm.parseState != ParseState.Loading
     ) {
-        if (vm.parseState == ParseState.Loading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("解析中...")
-        } else {
-            Icon(Icons.Default.Search, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("解析链接")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (vm.parseState == ParseState.Loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("解析中...")
+            } else {
+                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("解析链接")
+            }
         }
     }
 }
@@ -230,9 +298,14 @@ private fun DownloadSection(vm: MainViewModel) {
                 onClick = { vm.downloadVideo() },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("下载视频")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (vm.totalBytes > 0) "下载视频 (${formatFileSize(vm.totalBytes)})"
+                        else "下载视频"
+                    )
+                }
             }
         }
         DownloadState.Downloading -> {
@@ -263,6 +336,23 @@ private fun DownloadSection(vm: MainViewModel) {
                             .clip(RoundedCornerShape(4.dp))
                     )
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val sizeText = if (vm.totalBytes > 0) {
+                        "${formatFileSize(vm.downloadedBytes)} / ${formatFileSize(vm.totalBytes)}"
+                    } else {
+                        formatFileSize(vm.downloadedBytes)
+                    }
+                    Text(sizeText, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    if (vm.downloadSpeed > 0) {
+                        Text("${formatFileSize(vm.downloadSpeed)}/s",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    }
+                }
             }
         }
         DownloadState.Completed -> {
@@ -280,9 +370,11 @@ private fun DownloadSection(vm: MainViewModel) {
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("打开视频")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("打开视频")
+                }
             }
         }
         DownloadState.Failed -> {
@@ -290,12 +382,27 @@ private fun DownloadSection(vm: MainViewModel) {
                 onClick = { vm.downloadVideo() },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("下载失败，点击重试")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("下载失败，点击重试")
+                }
             }
         }
     }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024 && unitIndex < units.size - 1) {
+        value /= 1024
+        unitIndex++
+    }
+    return if (unitIndex == 0) "${bytes} B"
+    else String.format("%.1f %s", value, units[unitIndex])
 }
 
 @Composable

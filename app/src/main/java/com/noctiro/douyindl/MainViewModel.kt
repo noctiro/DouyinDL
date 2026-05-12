@@ -20,6 +20,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.core.net.toUri
 
 enum class ParseState {
@@ -52,6 +55,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var downloadProgress by mutableFloatStateOf(0f)
         private set
 
+    var totalBytes by mutableLongStateOf(-1L)
+        private set
+
+    var downloadedBytes by mutableLongStateOf(0L)
+        private set
+
+    var downloadSpeed by mutableLongStateOf(0L)
+        private set
+
     private var downloadId: Long = -1L
 
     fun updateInput(text: String) {
@@ -69,12 +81,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         videoInfo = null
         downloadState = DownloadState.Idle
         downloadProgress = 0f
+        totalBytes = -1L
+        downloadedBytes = 0L
+        downloadSpeed = 0L
 
         viewModelScope.launch {
             try {
                 val info = parser.parseShareUrl(inputUrl)
                 videoInfo = info
                 parseState = ParseState.Success
+                fetchFileSize(info)
             } catch (e: Exception) {
                 errorMessage = e.message ?: "解析失败"
                 parseState = ParseState.Error
@@ -106,14 +122,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         downloadId = dm.enqueue(request)
         downloadState = DownloadState.Downloading
         downloadProgress = 0f
+        downloadedBytes = 0L
+        downloadSpeed = 0L
 
         viewModelScope.launch {
             pollDownloadProgress(dm, downloadId)
         }
     }
 
+    private fun fetchFileSize(info: VideoInfo) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val conn = URL(info.url).openConnection() as HttpURLConnection
+                conn.requestMethod = "HEAD"
+                conn.setRequestProperty("User-Agent", info.userAgent)
+                conn.connect()
+                val length = conn.contentLength.toLong()
+                if (length > 0) totalBytes = length
+                conn.disconnect()
+            } catch (_: Exception) { }
+        }
+    }
+
     private suspend fun pollDownloadProgress(dm: DownloadManager, id: Long) {
         withContext(Dispatchers.IO) {
+            var lastBytes = 0L
+            var lastTime = System.currentTimeMillis()
             while (true) {
                 val query = DownloadManager.Query().setFilterById(id)
                 val cursor = dm.query(query)
@@ -121,7 +155,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val status = cursor.getInt(
                         cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
                     )
-                    val bytesDownloaded = cursor.getLong(
+                    val bytesDown = cursor.getLong(
                         cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
                     )
                     val bytesTotal = cursor.getLong(
@@ -132,6 +166,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     when (status) {
                         DownloadManager.STATUS_SUCCESSFUL -> {
                             downloadProgress = 1f
+                            downloadedBytes = bytesTotal
+                            totalBytes = bytesTotal
+                            downloadSpeed = 0L
                             downloadState = DownloadState.Completed
                             return@withContext
                         }
@@ -140,8 +177,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             return@withContext
                         }
                         else -> {
+                            val now = System.currentTimeMillis()
+                            val elapsed = now - lastTime
+                            if (elapsed > 0) {
+                                downloadSpeed = (bytesDown - lastBytes) * 1000 / elapsed
+                                lastBytes = bytesDown
+                                lastTime = now
+                            }
+                            downloadedBytes = bytesDown
                             if (bytesTotal > 0) {
-                                downloadProgress = bytesDownloaded.toFloat() / bytesTotal.toFloat()
+                                totalBytes = bytesTotal
+                                downloadProgress = bytesDown.toFloat() / bytesTotal.toFloat()
                             }
                         }
                     }
@@ -186,5 +232,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         errorMessage = null
         downloadState = DownloadState.Idle
         downloadProgress = 0f
+        totalBytes = -1L
+        downloadedBytes = 0L
+        downloadSpeed = 0L
     }
 }

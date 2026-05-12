@@ -2,7 +2,7 @@
 
 # DouyinDL
 
-抖音视频下载
+一个简洁的抖音无水印视频下载工具
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-green.svg)](https://developer.android.com)
