@@ -1,6 +1,7 @@
 package com.noctiro.douyindl
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -59,6 +60,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.noctiro.douyindl.data.VideoInfo
@@ -104,6 +106,12 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showAbout by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val versionText = remember(context) {
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val versionName = packageInfo.versionName ?: "unknown"
+        val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo)
+        "版本: $versionName ($versionCode)"
+    }
 
     if (showAbout) {
         AlertDialog(
@@ -116,7 +124,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                     horizontalAlignment = Alignment.Start
                 ) {
                     Text(
-                        text = "版本: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        text = versionText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
