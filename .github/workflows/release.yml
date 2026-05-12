@@ -1,0 +1,103 @@
+name: Build & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_content:
+        description: 'Release 内容'
+        required: false
+        default: ''
+      prerelease:
+        description: '标记为预发布版本'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.jks
+
+      - name: Create local.properties
+        run: |
+          echo "RELEASE_STORE_FILE=release.jks" >> local.properties
+          echo "RELEASE_STORE_PASSWORD=${{ secrets.STORE_PASSWORD }}" >> local.properties
+          echo "RELEASE_KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> local.properties
+          echo "RELEASE_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> local.properties
+
+      - name: Set version
+        id: version
+        run: |
+          VERSION=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build release APKs
+        run: ./gradlew assembleRelease
+
+      - name: Rename APKs
+        run: |
+          mkdir -p artifacts
+          cd app/build/outputs/apk/release
+          for apk in *.apk; do
+            if echo "$apk" | grep -q "universal"; then
+              cp "$apk" "$GITHUB_WORKSPACE/artifacts/DouyinDL-v${{ steps.version.outputs.version }}-universal.apk"
+            elif echo "$apk" | grep -q "armeabi-v7a"; then
+              cp "$apk" "$GITHUB_WORKSPACE/artifacts/DouyinDL-v${{ steps.version.outputs.version }}-armeabi-v7a.apk"
+            elif echo "$apk" | grep -q "arm64-v8a"; then
+              cp "$apk" "$GITHUB_WORKSPACE/artifacts/DouyinDL-v${{ steps.version.outputs.version }}-arm64-v8a.apk"
+            elif echo "$apk" | grep -q "x86_64"; then
+              cp "$apk" "$GITHUB_WORKSPACE/artifacts/DouyinDL-v${{ steps.version.outputs.version }}-x86_64.apk"
+            elif echo "$apk" | grep -q "x86"; then
+              cp "$apk" "$GITHUB_WORKSPACE/artifacts/DouyinDL-v${{ steps.version.outputs.version }}-x86.apk"
+            fi
+          done
+
+      - name: Generate release body
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          REPO="${{ github.repository }}"
+          CONTENT=$(cat <<'EOF'
+          ${{ inputs.release_content }}
+          EOF
+          )
+
+          {
+            if [ -n "$(echo "$CONTENT" | tr -d '[:space:]')" ]; then
+              echo "$CONTENT"
+              echo ""
+            fi
+            echo "# 下载链接"
+            echo ""
+            echo "| 架构 | 下载 |"
+            echo "|------|------|"
+            echo "| arm64-v8a | [DouyinDL-v${VERSION}-arm64-v8a.apk](https://github.com/${REPO}/releases/download/v${VERSION}/DouyinDL-v${VERSION}-arm64-v8a.apk) |"
+            echo "| armeabi-v7a | [DouyinDL-v${VERSION}-armeabi-v7a.apk](https://github.com/${REPO}/releases/download/v${VERSION}/DouyinDL-v${VERSION}-armeabi-v7a.apk) |"
+            echo "| x86_64 | [DouyinDL-v${VERSION}-x86_64.apk](https://github.com/${REPO}/releases/download/v${VERSION}/DouyinDL-v${VERSION}-x86_64.apk) |"
+            echo "| x86 | [DouyinDL-v${VERSION}-x86.apk](https://github.com/${REPO}/releases/download/v${VERSION}/DouyinDL-v${VERSION}-x86.apk) |"
+            echo "| universal | [DouyinDL-v${VERSION}-universal.apk](https://github.com/${REPO}/releases/download/v${VERSION}/DouyinDL-v${VERSION}-universal.apk) |"
+          } > release_body.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body_path: release_body.md
+          prerelease: ${{ inputs.prerelease }}
+          files: artifacts/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
