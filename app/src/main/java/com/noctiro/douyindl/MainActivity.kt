@@ -107,7 +107,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     if (showAbout) {
         AlertDialog(
-            onDismissRequest = { },
+            onDismissRequest = { showAbout = false },
             icon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text("DouyinDL") },
             text = {
@@ -145,7 +145,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 }) { Text("GitHub") }
             },
             dismissButton = {
-                TextButton(onClick = { }) { Text("关闭") }
+                TextButton(onClick = { showAbout = false }) { Text("关闭") }
             }
         )
     }
@@ -159,7 +159,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 title = { Text("抖音视频下载") },
                 scrollBehavior = scrollBehavior,
                 actions = {
-                    IconButton(onClick = { }) {
+                    IconButton(onClick = { showAbout = true }) {
                         Icon(Icons.Default.Info, contentDescription = "关于")
                     }
                 }
