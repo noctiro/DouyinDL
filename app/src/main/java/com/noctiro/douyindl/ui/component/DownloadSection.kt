@@ -25,14 +25,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.noctiro.douyindl.MainViewModel
+import com.noctiro.douyindl.R
 import com.noctiro.douyindl.download.DownloadState
 import com.noctiro.douyindl.util.formatEta
 import com.noctiro.douyindl.util.formatFileSize
 
 @Composable
 internal fun DownloadSection(vm: MainViewModel) {
+    val context = LocalContext.current
+
     when (vm.downloadState) {
         DownloadState.Idle -> {
             FilledTonalButton(
@@ -43,8 +47,8 @@ internal fun DownloadSection(vm: MainViewModel) {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        if (vm.totalBytes > 0) "下载视频 (${formatFileSize(vm.totalBytes)})"
-                        else "下载视频"
+                        if (vm.totalBytes > 0) stringResource(R.string.download_video_with_size, formatFileSize(vm.totalBytes))
+                        else stringResource(R.string.download_video)
                     )
                 }
             }
@@ -55,7 +59,7 @@ internal fun DownloadSection(vm: MainViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("下载中...", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.downloading), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "${(vm.downloadProgress * 100).toInt()}%",
                         style = MaterialTheme.typography.bodyMedium
@@ -93,7 +97,7 @@ internal fun DownloadSection(vm: MainViewModel) {
                         if (vm.downloadSpeed > 0) append("${formatFileSize(vm.downloadSpeed)}/s")
                         if (vm.etaSeconds > 0) {
                             if (isNotEmpty()) append(" · ")
-                            append("剩余 ${formatEta(vm.etaSeconds)}")
+                            append(stringResource(R.string.eta_remaining, formatEta(context, vm.etaSeconds)))
                         }
                     }
                     if (speedAndEta.isNotEmpty()) {
@@ -108,13 +112,12 @@ internal fun DownloadSection(vm: MainViewModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("取消下载")
+                        Text(stringResource(R.string.cancel_download))
                     }
                 }
             }
         }
         DownloadState.Completed -> {
-            val context = LocalContext.current
             FilledTonalButton(
                 onClick = {
                     try {
@@ -131,7 +134,7 @@ internal fun DownloadSection(vm: MainViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("打开视频")
+                    Text(stringResource(R.string.open_video))
                 }
             }
         }
@@ -151,7 +154,7 @@ internal fun DownloadSection(vm: MainViewModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("下载失败，点击重试")
+                        Text(stringResource(R.string.download_failed_retry))
                     }
                 }
             }

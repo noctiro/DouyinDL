@@ -7,11 +7,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.noctiro.douyindl.data.ResException
 import com.noctiro.douyindl.data.VideoInfo
 import com.noctiro.douyindl.data.VideoParserManager
 import com.noctiro.douyindl.download.DownloadState
 import com.noctiro.douyindl.download.VideoDownloader
 import kotlinx.coroutines.launch
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 
 enum class ParseState {
     Idle, Loading, Success, Error
@@ -68,7 +73,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 parseState = ParseState.Success
                 fetchFileSize(info)
             } catch (e: Exception) {
-                errorMessage = e.message ?: "解析失败"
+                errorMessage = resolveErrorMessage(e)
                 parseState = ParseState.Error
             }
         }
@@ -98,6 +103,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val length = parserManager.fetchFileSize(info.url, info.userAgent)
                 if (length > 0) totalBytes = length
             } catch (_: Exception) { }
+        }
+    }
+
+    private fun resolveErrorMessage(e: Exception): String {
+        val ctx = getApplication<Application>()
+        if (e is ResException) {
+            return ctx.getString(e.resId, *e.args)
+        }
+        val cause = e.cause ?: e
+        return when (cause) {
+            is SocketTimeoutException -> ctx.getString(R.string.error_timeout)
+            is UnknownHostException -> ctx.getString(R.string.error_unknown_host)
+            is SSLException -> ctx.getString(R.string.error_ssl)
+            is SocketException -> ctx.getString(R.string.error_connection_reset)
+            else -> when {
+                e is SocketTimeoutException -> ctx.getString(R.string.error_timeout)
+                e is UnknownHostException -> ctx.getString(R.string.error_unknown_host)
+                e is SSLException -> ctx.getString(R.string.error_ssl)
+                e is SocketException -> ctx.getString(R.string.error_connection_reset)
+                e.message?.contains("timeout", ignoreCase = true) == true -> ctx.getString(R.string.error_timeout)
+                e.message?.contains("reset", ignoreCase = true) == true -> ctx.getString(R.string.error_connection_reset)
+                else -> e.message ?: ctx.getString(R.string.error_parse_failed)
+            }
         }
     }
 }

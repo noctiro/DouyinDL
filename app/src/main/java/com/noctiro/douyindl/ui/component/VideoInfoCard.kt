@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -51,6 +52,7 @@ import coil3.request.SuccessResult
 import coil3.ImageLoader
 import coil3.toBitmap
 import com.noctiro.douyindl.MainViewModel
+import com.noctiro.douyindl.R
 import com.noctiro.douyindl.data.VideoInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -81,7 +83,7 @@ internal fun VideoInfoCard(info: VideoInfo, vm: MainViewModel) {
             info.coverUrl?.let { url ->
                 AsyncImage(
                     model = url,
-                    contentDescription = "视频封面（点击预览）",
+                    contentDescription = stringResource(R.string.cover_click_preview),
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
@@ -97,7 +99,7 @@ internal fun VideoInfoCard(info: VideoInfo, vm: MainViewModel) {
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "ID: ${info.videoId}",
+                text = stringResource(R.string.video_id_format, info.videoId),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
             )
@@ -131,7 +133,7 @@ private fun CoverPreviewDialog(coverUrl: String, title: String, onDismiss: () ->
             ) {
                 AsyncImage(
                     model = coverUrl,
-                    contentDescription = "封面预览",
+                    contentDescription = stringResource(R.string.cover_preview),
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -157,11 +159,11 @@ private fun CoverPreviewDialog(coverUrl: String, title: String, onDismiss: () ->
                             strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("保存中...")
+                        Text(stringResource(R.string.saving))
                     } else {
                         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("保存封面")
+                        Text(stringResource(R.string.save_cover))
                     }
                 }
             }
@@ -172,7 +174,7 @@ private fun CoverPreviewDialog(coverUrl: String, title: String, onDismiss: () ->
             ) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "关闭",
+                    contentDescription = stringResource(R.string.close),
                     tint = Color.White
                 )
             }
@@ -190,7 +192,7 @@ private suspend fun saveCoverImage(context: Context, url: String, title: String)
             val result = loader.execute(request)
             if (result !is SuccessResult) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "获取封面失败", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.cover_fetch_failed), Toast.LENGTH_SHORT).show()
                 }
                 return@withContext
             }
@@ -215,16 +217,16 @@ private suspend fun saveCoverImage(context: Context, url: String, title: String)
                     bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
                 }
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "封面已保存到相册", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.cover_saved), Toast.LENGTH_SHORT).show()
                 }
             } else {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "保存失败", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.save_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.save_failed_with_reason, e.message ?: ""), Toast.LENGTH_SHORT).show()
             }
         }
     }

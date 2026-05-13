@@ -1,3 +1,71 @@
 <resources>
     <string name="app_name">DouyinDL</string>
+
+    <!-- Main Screen -->
+    <string name="app_title">抖音视频下载</string>
+    <string name="about">关于</string>
+    <string name="close">关闭</string>
+    <string name="author">作者: Noctiro</string>
+    <string name="license">License: AGPL-3.0</string>
+    <string name="app_description">一个简洁的抖音无水印视频下载工具</string>
+    <string name="version_format">版本: %1$s (%2$d)</string>
+
+    <!-- Input Section -->
+    <string name="input_label">抖音分享内容</string>
+    <string name="input_placeholder">粘贴分享文本或链接，自动识别</string>
+    <string name="clear">清除</string>
+    <string name="paste">粘贴</string>
+    <string name="parsing">解析中…</string>
+    <string name="parse_link">解析链接</string>
+
+    <!-- Download Section -->
+    <string name="download_video">下载视频</string>
+    <string name="download_video_with_size">下载视频 (%1$s)</string>
+    <string name="downloading">下载中…</string>
+    <string name="eta_remaining">剩余 %1$s</string>
+    <string name="cancel_download">取消下载</string>
+    <string name="open_video">打开视频</string>
+    <string name="download_failed_retry">下载失败，点击重试</string>
+
+    <!-- Video Info Card -->
+    <string name="cover_click_preview">视频封面（点击预览）</string>
+    <string name="video_id_format">ID: %1$s</string>
+    <string name="cover_preview">封面预览</string>
+    <string name="saving">保存中…</string>
+    <string name="save_cover">保存封面</string>
+    <string name="cover_saved">封面已保存到相册</string>
+    <string name="cover_fetch_failed">获取封面失败</string>
+    <string name="save_failed">保存失败</string>
+    <string name="save_failed_with_reason">保存失败: %1$s</string>
+
+    <!-- ETA time units -->
+    <string name="eta_seconds">%1$d秒</string>
+    <string name="eta_minutes_seconds">%1$d分%2$d秒</string>
+    <string name="eta_hours_minutes">%1$d时%2$d分</string>
+
+    <!-- Error messages - Parse -->
+    <string name="error_unknown">未知错误</string>
+    <string name="error_parse_failed">解析失败</string>
+    <string name="error_no_valid_link">未找到有效的链接</string>
+    <string name="error_unsupported_format">不支持的链接格式，目前支持: %1$s</string>
+    <string name="error_fetch_page">获取页面内容失败</string>
+    <string name="error_parse_html">从HTML中解析视频信息失败</string>
+    <string name="error_parse_loader_data">无法解析视频数据</string>
+    <string name="error_parse_video_info">无法解析视频信息</string>
+    <string name="error_video_info_empty">视频信息为空</string>
+    <string name="error_item_list_empty">视频列表为空</string>
+    <string name="error_get_video_url">无法获取视频URL</string>
+
+    <!-- Error messages - Download -->
+    <string name="error_download_failed">下载失败</string>
+    <string name="error_get_file_size">无法获取文件大小</string>
+    <string name="error_chunk_download">分片下载失败: HTTP %1$d</string>
+    <string name="error_empty_response">响应体为空</string>
+
+    <!-- Error messages - Network with hints -->
+    <string name="error_connection_reset">连接被重置，请检查网络或尝试使用VPN</string>
+    <string name="error_timeout">连接超时，请检查网络连接后重试</string>
+    <string name="error_unknown_host">无法连接服务器，请检查网络连接</string>
+    <string name="error_ssl">安全连接失败，请检查网络环境</string>
+    <string name="error_network_generic">网络错误，请检查网络连接后重试</string>
 </resources>

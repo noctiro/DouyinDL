@@ -1,5 +1,7 @@
 package com.noctiro.douyindl.data
 
+import com.noctiro.douyindl.R
+
 class VideoParserManager {
 
     private val parsers: List<VideoParser> = listOf(
@@ -14,10 +16,10 @@ class VideoParserManager {
 
     suspend fun parse(input: String): VideoInfo {
         val url = extractUrl(input)
-            ?: throw IllegalArgumentException("未找到有效的链接")
+            ?: throw ResException(R.string.error_no_valid_link)
 
         val parser = parsers.firstOrNull { it.canParse(url) }
-            ?: throw IllegalArgumentException("不支持的链接格式，目前支持: ${parsers.joinToString { it.name }}")
+            ?: throw ResException(R.string.error_unsupported_format, arrayOf(parsers.joinToString { it.name }))
 
         return parser.parse(url)
     }

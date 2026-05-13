@@ -19,9 +19,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.noctiro.douyindl.MainViewModel
 import com.noctiro.douyindl.ParseState
+import com.noctiro.douyindl.R
 
 @Composable
 internal fun InputSection(vm: MainViewModel) {
@@ -31,15 +33,15 @@ internal fun InputSection(vm: MainViewModel) {
         value = vm.inputUrl,
         onValueChange = { vm.updateInput(it) },
         modifier = Modifier.fillMaxWidth(),
-        label = { Text("抖音分享内容") },
-        placeholder = { Text("粘贴分享文本或链接，自动识别") },
+        label = { Text(stringResource(R.string.input_label)) },
+        placeholder = { Text(stringResource(R.string.input_placeholder)) },
         singleLine = false,
         maxLines = 3,
         trailingIcon = {
             Row {
                 if (vm.inputUrl.isNotEmpty()) {
                     IconButton(onClick = { vm.reset() }) {
-                        Icon(Icons.Default.Clear, contentDescription = "清除")
+                        Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.clear))
                     }
                 }
                 IconButton(onClick = {
@@ -50,7 +52,7 @@ internal fun InputSection(vm: MainViewModel) {
                         vm.parseUrl()
                     }
                 }) {
-                    Icon(Icons.Default.ContentPaste, contentDescription = "粘贴")
+                    Icon(Icons.Default.ContentPaste, contentDescription = stringResource(R.string.paste))
                 }
             }
         }
@@ -68,11 +70,11 @@ internal fun InputSection(vm: MainViewModel) {
                     strokeWidth = 2.dp
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("解析中...")
+                Text(stringResource(R.string.parsing))
             } else {
                 Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("解析链接")
+                Text(stringResource(R.string.parse_link))
             }
         }
     }

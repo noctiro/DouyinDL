@@ -1,0 +1,71 @@
+<resources>
+    <string name="app_name">DouyinDL</string>
+
+    <!-- Main Screen -->
+    <string name="app_title">Douyin Video Download</string>
+    <string name="about">About</string>
+    <string name="close">Close</string>
+    <string name="author">Author: Noctiro</string>
+    <string name="license">License: AGPL-3.0</string>
+    <string name="app_description">A simple watermark-free Douyin video downloader</string>
+    <string name="version_format">Version: %1$s (%2$d)</string>
+
+    <!-- Input Section -->
+    <string name="input_label">Douyin shared content</string>
+    <string name="input_placeholder">Paste shared text or link, auto-detect</string>
+    <string name="clear">Clear</string>
+    <string name="paste">Paste</string>
+    <string name="parsing">Parsing…</string>
+    <string name="parse_link">Parse Link</string>
+
+    <!-- Download Section -->
+    <string name="download_video">Download Video</string>
+    <string name="download_video_with_size">Download Video (%1$s)</string>
+    <string name="downloading">Downloading…</string>
+    <string name="eta_remaining">%1$s remaining</string>
+    <string name="cancel_download">Cancel Download</string>
+    <string name="open_video">Open Video</string>
+    <string name="download_failed_retry">Download failed, tap to retry</string>
+
+    <!-- Video Info Card -->
+    <string name="cover_click_preview">Video cover (tap to preview)</string>
+    <string name="video_id_format">ID: %1$s</string>
+    <string name="cover_preview">Cover preview</string>
+    <string name="saving">Saving…</string>
+    <string name="save_cover">Save Cover</string>
+    <string name="cover_saved">Cover saved to gallery</string>
+    <string name="cover_fetch_failed">Failed to fetch cover</string>
+    <string name="save_failed">Save failed</string>
+    <string name="save_failed_with_reason">Save failed: %1$s</string>
+
+    <!-- ETA time units -->
+    <string name="eta_seconds">%1$ds</string>
+    <string name="eta_minutes_seconds">%1$dm %2$ds</string>
+    <string name="eta_hours_minutes">%1$dh %2$dm</string>
+
+    <!-- Error messages - Parse -->
+    <string name="error_unknown">Unknown error</string>
+    <string name="error_parse_failed">Parsing failed</string>
+    <string name="error_no_valid_link">No valid link found</string>
+    <string name="error_unsupported_format">Unsupported link format. Currently supported: %1$s</string>
+    <string name="error_fetch_page">Failed to fetch page content</string>
+    <string name="error_parse_html">Failed to parse video info from HTML</string>
+    <string name="error_parse_loader_data">Unable to parse video data</string>
+    <string name="error_parse_video_info">Unable to parse video info</string>
+    <string name="error_video_info_empty">Video info is empty</string>
+    <string name="error_item_list_empty">Video list is empty</string>
+    <string name="error_get_video_url">Unable to get video URL</string>
+
+    <!-- Error messages - Download -->
+    <string name="error_download_failed">Download failed</string>
+    <string name="error_get_file_size">Unable to get file size</string>
+    <string name="error_chunk_download">Chunk download failed: HTTP %1$d</string>
+    <string name="error_empty_response">Response body is empty</string>
+
+    <!-- Error messages - Network with hints -->
+    <string name="error_connection_reset">Connection reset. Please check your network or try using a VPN</string>
+    <string name="error_timeout">Connection timed out. Please check your network and try again</string>
+    <string name="error_unknown_host">Cannot connect to server. Please check your network connection</string>
+    <string name="error_ssl">Secure connection failed. Please check your network environment</string>
+    <string name="error_network_generic">Network error. Please check your connection and try again</string>
+</resources>

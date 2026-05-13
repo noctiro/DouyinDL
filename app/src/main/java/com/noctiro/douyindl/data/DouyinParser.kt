@@ -1,5 +1,6 @@
 package com.noctiro.douyindl.data
 
+import com.noctiro.douyindl.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -41,15 +42,15 @@ class DouyinParser : VideoParser {
             .build()
 
         val html = client.newCall(pageRequest).execute().use { response ->
-            response.body?.string() ?: throw Exception("获取页面内容失败")
+            response.body?.string() ?: throw ResException(R.string.error_fetch_page)
         }
 
         val pattern = Regex("""window\._ROUTER_DATA\s*=\s*(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
-        val matchResult = pattern.find(html) ?: throw Exception("从HTML中解析视频信息失败")
+        val matchResult = pattern.find(html) ?: throw ResException(R.string.error_parse_html)
         val jsonStr = matchResult.groupValues[1].trim()
 
         val jsonData = json.parseToJsonElement(jsonStr).jsonObject
-        val loaderData = jsonData["loaderData"]?.jsonObject ?: throw Exception("无法解析loaderData")
+        val loaderData = jsonData["loaderData"]?.jsonObject ?: throw ResException(R.string.error_parse_loader_data)
 
         val videoPageKey = "video_(id)/page"
         val notePageKey = "note_(id)/page"
@@ -59,11 +60,11 @@ class DouyinParser : VideoParser {
                 loaderData[videoPageKey]?.jsonObject?.get("videoInfoRes")?.jsonObject
             loaderData.containsKey(notePageKey) ->
                 loaderData[notePageKey]?.jsonObject?.get("videoInfoRes")?.jsonObject
-            else -> throw Exception("无法从JSON中解析视频或图集信息")
-        } ?: throw Exception("videoInfoRes为空")
+            else -> throw ResException(R.string.error_parse_video_info)
+        } ?: throw ResException(R.string.error_video_info_empty)
 
         val itemList = videoInfoRes["item_list"]?.jsonArray
-            ?: throw Exception("item_list为空")
+            ?: throw ResException(R.string.error_item_list_empty)
         val data = itemList[0].jsonObject
 
         val videoUrl = data["video"]?.jsonObject
@@ -71,7 +72,7 @@ class DouyinParser : VideoParser {
             ?.get("url_list")?.jsonArray
             ?.get(0)?.jsonPrimitive?.content
             ?.replace("playwm", "play")
-            ?: throw Exception("无法获取视频URL")
+            ?: throw ResException(R.string.error_get_video_url)
 
         val coverUrl = data["video"]?.jsonObject
             ?.get("cover")?.jsonObject

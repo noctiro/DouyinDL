@@ -1,0 +1,71 @@
+<resources>
+    <string name="app_name">DouyinDL</string>
+
+    <!-- Main Screen -->
+    <string name="app_title">Douyin動画ダウンロード</string>
+    <string name="about">情報</string>
+    <string name="close">閉じる</string>
+    <string name="author">作者: Noctiro</string>
+    <string name="license">License: AGPL-3.0</string>
+    <string name="app_description">シンプルなDouyin透かしなし動画ダウンロードツール</string>
+    <string name="version_format">バージョン: %1$s (%2$d)</string>
+
+    <!-- Input Section -->
+    <string name="input_label">Douyin共有コンテンツ</string>
+    <string name="input_placeholder">共有テキストまたはリンクを貼り付け、自動認識</string>
+    <string name="clear">クリア</string>
+    <string name="paste">貼り付け</string>
+    <string name="parsing">解析中…</string>
+    <string name="parse_link">リンクを解析</string>
+
+    <!-- Download Section -->
+    <string name="download_video">動画をダウンロード</string>
+    <string name="download_video_with_size">動画をダウンロード (%1$s)</string>
+    <string name="downloading">ダウンロード中…</string>
+    <string name="eta_remaining">残り %1$s</string>
+    <string name="cancel_download">ダウンロードをキャンセル</string>
+    <string name="open_video">動画を開く</string>
+    <string name="download_failed_retry">ダウンロード失敗、タップして再試行</string>
+
+    <!-- Video Info Card -->
+    <string name="cover_click_preview">動画カバー（タップでプレビュー）</string>
+    <string name="video_id_format">ID: %1$s</string>
+    <string name="cover_preview">カバープレビュー</string>
+    <string name="saving">保存中…</string>
+    <string name="save_cover">カバーを保存</string>
+    <string name="cover_saved">カバーをアルバムに保存しました</string>
+    <string name="cover_fetch_failed">カバーの取得に失敗しました</string>
+    <string name="save_failed">保存に失敗しました</string>
+    <string name="save_failed_with_reason">保存に失敗しました: %1$s</string>
+
+    <!-- ETA time units -->
+    <string name="eta_seconds">%1$d秒</string>
+    <string name="eta_minutes_seconds">%1$d分%2$d秒</string>
+    <string name="eta_hours_minutes">%1$d時間%2$d分</string>
+
+    <!-- Error messages - Parse -->
+    <string name="error_unknown">不明なエラー</string>
+    <string name="error_parse_failed">解析に失敗しました</string>
+    <string name="error_no_valid_link">有効なリンクが見つかりません</string>
+    <string name="error_unsupported_format">非対応のリンク形式です。現在対応: %1$s</string>
+    <string name="error_fetch_page">ページの取得に失敗しました</string>
+    <string name="error_parse_html">HTMLから動画情報の解析に失敗しました</string>
+    <string name="error_parse_loader_data">動画データを解析できません</string>
+    <string name="error_parse_video_info">動画情報を解析できません</string>
+    <string name="error_video_info_empty">動画情報が空です</string>
+    <string name="error_item_list_empty">動画リストが空です</string>
+    <string name="error_get_video_url">動画URLを取得できません</string>
+
+    <!-- Error messages - Download -->
+    <string name="error_download_failed">ダウンロードに失敗しました</string>
+    <string name="error_get_file_size">ファイルサイズを取得できません</string>
+    <string name="error_chunk_download">分割ダウンロード失敗: HTTP %1$d</string>
+    <string name="error_empty_response">レスポンスが空です</string>
+
+    <!-- Error messages - Network with hints -->
+    <string name="error_connection_reset">接続がリセットされました。ネットワークを確認するかVPNをお試しください</string>
+    <string name="error_timeout">接続がタイムアウトしました。ネットワーク接続を確認して再試行してください</string>
+    <string name="error_unknown_host">サーバーに接続できません。ネットワーク接続を確認してください</string>
+    <string name="error_ssl">セキュア接続に失敗しました。ネットワーク環境を確認してください</string>
+    <string name="error_network_generic">ネットワークエラー。ネットワーク接続を確認して再試行してください</string>
+</resources>

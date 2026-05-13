@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.noctiro.douyindl.R
 import com.noctiro.douyindl.data.VideoInfo
 import com.noctiro.douyindl.util.HttpClient
 import kotlinx.coroutines.CoroutineScope
@@ -59,13 +60,13 @@ class VideoDownloader(private val appContext: Context) {
 
     companion object {
         private const val BUFFER_SIZE = 8192
-        private const val MIN_CHUNK_SIZE = 512 * 1024L // 512KB
+        private const val MIN_CHUNK_SIZE = 512 * 1024L
 
         fun threadCountFor(fileSize: Long): Int = when {
-            fileSize < 1 * 1024 * 1024 -> 1        // < 1MB: 单线程
-            fileSize < 10 * 1024 * 1024 -> 2       // 1-10MB: 2线程
-            fileSize < 50 * 1024 * 1024 -> 4       // 10-50MB: 4线程
-            else -> 8                               // > 50MB: 8线程
+            fileSize < 1 * 1024 * 1024 -> 1
+            fileSize < 10 * 1024 * 1024 -> 2
+            fileSize < 50 * 1024 * 1024 -> 4
+            else -> 8
         }
     }
 
@@ -86,7 +87,7 @@ class VideoDownloader(private val appContext: Context) {
                 download(info)
             } catch (e: Exception) {
                 if (!cancelled) {
-                    downloadFailReason = e.message ?: "下载失败"
+                    downloadFailReason = e.message ?: appContext.getString(R.string.error_download_failed)
                     downloadState = DownloadState.Failed
                     etaSeconds = -1L
                 }
@@ -119,7 +120,7 @@ class VideoDownloader(private val appContext: Context) {
 
     private suspend fun download(info: VideoInfo) = withContext(Dispatchers.IO) {
         val contentLength = HttpClient.fetchContentLength(info.url, info.userAgent)
-        if (contentLength <= 0) throw Exception("无法获取文件大小")
+        if (contentLength <= 0) throw Exception(appContext.getString(R.string.error_get_file_size))
 
         totalBytes = contentLength
 
@@ -186,10 +187,10 @@ class VideoDownloader(private val appContext: Context) {
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful && response.code != 206) {
-                throw Exception("分片下载失败: HTTP ${response.code}")
+                throw Exception(appContext.getString(R.string.error_chunk_download, response.code))
             }
 
-            val body = response.body ?: throw Exception("响应体为空")
+            val body = response.body ?: throw Exception(appContext.getString(R.string.error_empty_response))
             val input = body.byteStream()
             val buffer = ByteArray(BUFFER_SIZE)
 
