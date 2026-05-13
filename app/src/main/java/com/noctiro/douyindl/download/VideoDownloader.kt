@@ -28,6 +28,14 @@ enum class DownloadState {
     Idle, Downloading, Completed, Failed
 }
 
+fun interface DownloadProgressListener {
+    fun onProgress(progress: Float, downloadedBytes: Long, totalBytes: Long, speed: Long, etaSeconds: Long)
+}
+
+fun interface DownloadCompleteListener {
+    fun onComplete(state: DownloadState, failReason: String?)
+}
+
 class VideoDownloader(private val appContext: Context) {
 
     var downloadState by mutableStateOf(DownloadState.Idle)
@@ -56,11 +64,13 @@ class VideoDownloader(private val appContext: Context) {
     @Volatile
     private var cancelled = false
 
+    var progressListener: DownloadProgressListener? = null
+    var completeListener: DownloadCompleteListener? = null
+
     private val client = HttpClient.instance
 
     companion object {
         private const val BUFFER_SIZE = 8192
-        private const val MIN_CHUNK_SIZE = 512 * 1024L
 
         fun threadCountFor(fileSize: Long): Int = when {
             fileSize < 1 * 1024 * 1024 -> 1
@@ -90,6 +100,7 @@ class VideoDownloader(private val appContext: Context) {
                     downloadFailReason = e.message ?: appContext.getString(R.string.error_download_failed)
                     downloadState = DownloadState.Failed
                     etaSeconds = -1L
+                    completeListener?.onComplete(DownloadState.Failed, downloadFailReason)
                 }
             }
         }
@@ -107,6 +118,7 @@ class VideoDownloader(private val appContext: Context) {
         downloadedBytes = 0L
         downloadSpeed = 0L
         etaSeconds = -1L
+        completeListener?.onComplete(DownloadState.Idle, null)
     }
 
     fun reset() {
@@ -169,6 +181,7 @@ class VideoDownloader(private val appContext: Context) {
         downloadState = DownloadState.Completed
 
         scanFile(outputFile)
+        completeListener?.onComplete(DownloadState.Completed, null)
     }
 
     private suspend fun downloadChunk(
@@ -234,6 +247,8 @@ class VideoDownloader(private val appContext: Context) {
             } else {
                 -1L
             }
+
+            progressListener?.onProgress(downloadProgress, downloadedBytes, totalBytes, downloadSpeed, etaSeconds)
         }
     }
 

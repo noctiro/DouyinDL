@@ -43,6 +43,12 @@
     <string name="eta_minutes_seconds">%1$d分%2$d秒</string>
     <string name="eta_hours_minutes">%1$d时%2$d分</string>
 
+    <!-- Notification -->
+    <string name="notification_channel_download">下载进度</string>
+    <string name="notification_downloading_title">正在下载视频</string>
+    <string name="notification_download_complete">下载完成</string>
+    <string name="notification_download_failed">下载失败</string>
+
     <!-- Error messages - Parse -->
     <string name="error_unknown">未知错误</string>
     <string name="error_parse_failed">解析失败</string>

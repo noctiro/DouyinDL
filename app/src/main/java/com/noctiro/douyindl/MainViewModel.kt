@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.noctiro.douyindl.data.ResException
 import com.noctiro.douyindl.data.VideoInfo
 import com.noctiro.douyindl.data.VideoParserManager
+import com.noctiro.douyindl.download.DownloadService
 import com.noctiro.douyindl.download.DownloadState
 import com.noctiro.douyindl.download.VideoDownloader
 import kotlinx.coroutines.launch
@@ -25,7 +26,11 @@ enum class ParseState {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val parserManager = VideoParserManager()
-    val downloader = VideoDownloader(application)
+
+    val downloader: VideoDownloader
+        get() = DownloadService.currentDownloader ?: fallbackDownloader
+
+    private val fallbackDownloader = VideoDownloader(application)
 
     var inputUrl by mutableStateOf("")
         private set
@@ -64,7 +69,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         errorMessage = null
         videoInfo = null
         totalBytes = -1L
-        downloader.reset()
+        fallbackDownloader.reset()
 
         viewModelScope.launch {
             try {
@@ -81,10 +86,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadVideo() {
         val info = videoInfo ?: return
-        downloader.start(info, viewModelScope)
+        DownloadService.start(getApplication(), info)
     }
 
-    fun cancelDownload() = downloader.cancel()
+    fun cancelDownload() {
+        DownloadService.cancel(getApplication())
+    }
 
     fun getDownloadedFileUri() = downloader.getDownloadedFileUri()
 
@@ -94,7 +101,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         videoInfo = null
         errorMessage = null
         totalBytes = -1L
-        downloader.reset()
+        fallbackDownloader.reset()
     }
 
     private fun fetchFileSize(info: VideoInfo) {

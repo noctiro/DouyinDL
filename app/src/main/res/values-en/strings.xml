@@ -43,6 +43,12 @@
     <string name="eta_minutes_seconds">%1$dm %2$ds</string>
     <string name="eta_hours_minutes">%1$dh %2$dm</string>
 
+    <!-- Notification -->
+    <string name="notification_channel_download">Download progress</string>
+    <string name="notification_downloading_title">Downloading video</string>
+    <string name="notification_download_complete">Download complete</string>
+    <string name="notification_download_failed">Download failed</string>
+
     <!-- Error messages - Parse -->
     <string name="error_unknown">Unknown error</string>
     <string name="error_parse_failed">Parsing failed</string>

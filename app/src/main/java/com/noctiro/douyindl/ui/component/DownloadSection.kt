@@ -1,6 +1,11 @@
 package com.noctiro.douyindl.ui.component
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.noctiro.douyindl.MainViewModel
 import com.noctiro.douyindl.R
 import com.noctiro.douyindl.download.DownloadState
@@ -37,10 +43,29 @@ import com.noctiro.douyindl.util.formatFileSize
 internal fun DownloadSection(vm: MainViewModel) {
     val context = LocalContext.current
 
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        vm.downloadVideo()
+    }
+
+    fun startDownload() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+        }
+        vm.downloadVideo()
+    }
+
     when (vm.downloadState) {
         DownloadState.Idle -> {
             FilledTonalButton(
-                onClick = { vm.downloadVideo() },
+                onClick = { startDownload() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -148,7 +173,7 @@ internal fun DownloadSection(vm: MainViewModel) {
                     )
                 }
                 FilledTonalButton(
-                    onClick = { vm.downloadVideo() },
+                    onClick = { startDownload() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
