@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,8 +74,12 @@ class VideoDownloader(private val appContext: Context) {
 
     private val client = HttpClient.downloadInstance
 
+    private data class Segment(val start: Long, val end: Long)
+
     companion object {
         private const val BUFFER_SIZE = 8192
+        private const val SEGMENT_SIZE = 2L * 1024 * 1024
+        private const val MAX_SEGMENT_RETRIES = 3
 
         fun threadCountFor(fileSize: Long): Int = when {
             fileSize < 1 * 1024 * 1024 -> 1
@@ -149,8 +154,12 @@ class VideoDownloader(private val appContext: Context) {
                 raf.setLength(contentLength)
             }
 
-            val threadCount = threadCountFor(contentLength)
-            val chunkSize = contentLength / threadCount
+            val segments = buildSegments(contentLength)
+            val channel = Channel<Segment>(capacity = Channel.UNLIMITED)
+            for (segment in segments) { channel.send(segment) }
+            channel.close()
+
+            val workerCount = threadCountFor(contentLength)
             val downloaded = AtomicLong(0L)
 
             val progressJob = launch {
@@ -158,14 +167,15 @@ class VideoDownloader(private val appContext: Context) {
             }
 
             try {
-                val tasks = (0 until threadCount).map { i ->
-                    val start = i * chunkSize
-                    val end = if (i == threadCount - 1) contentLength - 1 else (start + chunkSize - 1)
+                val workers = (0 until workerCount).map {
                     async(Dispatchers.IO) {
-                        downloadChunk(info.url, info.userAgent, tempFile, start, end, downloaded)
+                        for (segment in channel) {
+                            if (cancelled) break
+                            downloadSegmentWithRetry(info.url, info.userAgent, tempFile, segment, downloaded)
+                        }
                     }
                 }
-                tasks.awaitAll()
+                workers.awaitAll()
             } finally {
                 progressJob.cancel()
             }
@@ -197,18 +207,53 @@ class VideoDownloader(private val appContext: Context) {
         }
     }
 
-    private fun downloadChunk(
+    private fun buildSegments(contentLength: Long): List<Segment> {
+        val segments = mutableListOf<Segment>()
+        var offset = 0L
+        while (offset < contentLength) {
+            val end = minOf(offset + SEGMENT_SIZE - 1, contentLength - 1)
+            segments.add(Segment(offset, end))
+            offset = end + 1
+        }
+        return segments
+    }
+
+    private fun downloadSegmentWithRetry(
         url: String,
         userAgent: String,
         file: File,
-        start: Long,
-        end: Long,
+        segment: Segment,
+        downloaded: AtomicLong
+    ) {
+        var lastException: Exception? = null
+        repeat(MAX_SEGMENT_RETRIES) { attempt ->
+            val before = downloaded.get()
+            try {
+                downloadSegment(url, userAgent, file, segment, downloaded)
+                return
+            } catch (e: Exception) {
+                val written = downloaded.get() - before
+                if (written > 0) downloaded.addAndGet(-written)
+                lastException = e
+                if (attempt < MAX_SEGMENT_RETRIES - 1) {
+                    Thread.sleep(500L * (attempt + 1))
+                }
+            }
+        }
+        throw lastException!!
+    }
+
+    private fun downloadSegment(
+        url: String,
+        userAgent: String,
+        file: File,
+        segment: Segment,
         downloaded: AtomicLong
     ) {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", userAgent)
-            .header("Range", "bytes=$start-$end")
+            .header("Range", "bytes=${segment.start}-${segment.end}")
             .build()
 
         client.newCall(request).execute().use { response ->
@@ -221,7 +266,7 @@ class VideoDownloader(private val appContext: Context) {
             val buffer = ByteArray(BUFFER_SIZE)
 
             RandomAccessFile(file, "rw").use { raf ->
-                raf.seek(start)
+                raf.seek(segment.start)
                 var bytesRead: Int
                 while (input.read(buffer).also { bytesRead = it } != -1) {
                     if (cancelled) return
