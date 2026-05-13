@@ -104,6 +104,8 @@ class VideoDownloader(private val appContext: Context) {
         downloadJob = scope.launch {
             try {
                 download(info)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (!cancelled) {
                     downloadFailReason = e.message ?: appContext.getString(R.string.error_download_failed)

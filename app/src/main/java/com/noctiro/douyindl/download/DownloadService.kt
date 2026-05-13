@@ -82,6 +82,9 @@ class DownloadService : Service() {
             downloader?.cancel()
         }
 
+        serviceScope?.cancel()
+        serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
         val info = VideoInfo(url = url, title = title, videoId = "", userAgent = userAgent)
 
         val notification = buildProgressNotification(title, 0, "").build()
