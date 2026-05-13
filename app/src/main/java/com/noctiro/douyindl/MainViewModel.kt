@@ -90,7 +90,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelDownload() {
-        DownloadService.cancel(getApplication())
+        DownloadService.cancel()
     }
 
     fun getDownloadedFileUri() = downloader.getDownloadedFileUri()
@@ -125,10 +125,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is SSLException -> ctx.getString(R.string.error_ssl)
             is SocketException -> ctx.getString(R.string.error_connection_reset)
             else -> when {
-                e is SocketTimeoutException -> ctx.getString(R.string.error_timeout)
-                e is UnknownHostException -> ctx.getString(R.string.error_unknown_host)
-                e is SSLException -> ctx.getString(R.string.error_ssl)
-                e is SocketException -> ctx.getString(R.string.error_connection_reset)
                 e.message?.contains("timeout", ignoreCase = true) == true -> ctx.getString(R.string.error_timeout)
                 e.message?.contains("reset", ignoreCase = true) == true -> ctx.getString(R.string.error_connection_reset)
                 else -> e.message ?: ctx.getString(R.string.error_parse_failed)

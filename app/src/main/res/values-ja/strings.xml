@@ -48,6 +48,10 @@
     <string name="notification_downloading_title">動画をダウンロード中</string>
     <string name="notification_download_complete">ダウンロード完了</string>
     <string name="notification_download_failed">ダウンロード失敗</string>
+    <string name="notification_permission_title">通知の許可</string>
+    <string name="notification_permission_message">通知を許可すると、ダウンロードの進捗が通知バーに表示されます。許可しなくてもダウンロードは可能です。</string>
+    <string name="notification_permission_grant">許可する</string>
+    <string name="notification_permission_skip">スキップ</string>
 
     <!-- Error messages - Parse -->
     <string name="error_unknown">不明なエラー</string>

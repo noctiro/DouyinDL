@@ -14,7 +14,6 @@ class DouyinParser : VideoParser {
 
     override val name = "抖音"
 
-    private val client = HttpClient.instance
     private val json = Json { ignoreUnknownKeys = true }
 
     override fun canParse(url: String): Boolean {
@@ -24,14 +23,7 @@ class DouyinParser : VideoParser {
     override suspend fun parse(url: String): VideoInfo = withContext(Dispatchers.IO) {
         val ua = randomUserAgent()
 
-        val redirectRequest = Request.Builder()
-            .url(url)
-            .header("User-Agent", ua)
-            .build()
-
-        val finalUrl = client.newCall(redirectRequest).execute().use { response ->
-            response.request.url.toString()
-        }
+        val finalUrl = resolveRedirects(url, ua)
 
         val videoId = finalUrl.split("?")[0].trimEnd('/').split("/").last()
         val iesdUrl = "https://www.iesdouyin.com/share/video/$videoId"
@@ -41,7 +33,7 @@ class DouyinParser : VideoParser {
             .header("User-Agent", ua)
             .build()
 
-        val html = client.newCall(pageRequest).execute().use { response ->
+        val html = HttpClient.instance.newCall(pageRequest).execute().use { response ->
             response.body?.string() ?: throw ResException(R.string.error_fetch_page)
         }
 
@@ -65,6 +57,7 @@ class DouyinParser : VideoParser {
 
         val itemList = videoInfoRes["item_list"]?.jsonArray
             ?: throw ResException(R.string.error_item_list_empty)
+        if (itemList.isEmpty()) throw ResException(R.string.error_item_list_empty)
         val data = itemList[0].jsonObject
 
         val videoUrl = data["video"]?.jsonObject
@@ -96,6 +89,21 @@ class DouyinParser : VideoParser {
             userAgent = ua,
             source = name
         )
+    }
+
+    private fun resolveRedirects(url: String, userAgent: String, maxHops: Int = 5): String {
+        var current = url
+        repeat(maxHops) {
+            val request = Request.Builder()
+                .url(current)
+                .header("User-Agent", userAgent)
+                .build()
+            val response = HttpClient.noRedirectInstance.newCall(request).execute()
+            val location = response.use { it.header("Location") }
+            if (location == null) return current
+            current = location
+        }
+        return current
     }
 
     override suspend fun fetchFileSize(url: String, userAgent: String): Long {

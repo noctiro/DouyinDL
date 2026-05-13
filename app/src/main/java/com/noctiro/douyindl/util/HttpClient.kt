@@ -14,6 +14,15 @@ object HttpClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    val downloadInstance: OkHttpClient = instance.newBuilder()
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
+    val noRedirectInstance: OkHttpClient = instance.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
     suspend fun fetchContentLength(url: String, userAgent: String): Long = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(url)

@@ -48,6 +48,10 @@
     <string name="notification_downloading_title">Downloading video</string>
     <string name="notification_download_complete">Download complete</string>
     <string name="notification_download_failed">Download failed</string>
+    <string name="notification_permission_title">Notification Permission</string>
+    <string name="notification_permission_message">Grant notification permission to show download progress in the notification bar. You can still download without it.</string>
+    <string name="notification_permission_grant">Grant</string>
+    <string name="notification_permission_skip">Skip</string>
 
     <!-- Error messages - Parse -->
     <string name="error_unknown">Unknown error</string>

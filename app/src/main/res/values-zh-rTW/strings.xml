@@ -48,6 +48,10 @@
     <string name="notification_downloading_title">正在下載影片</string>
     <string name="notification_download_complete">下載完成</string>
     <string name="notification_download_failed">下載失敗</string>
+    <string name="notification_permission_title">通知權限</string>
+    <string name="notification_permission_message">授予通知權限後，下載進度將顯示在通知欄中。不授予也可以正常下載。</string>
+    <string name="notification_permission_grant">授予權限</string>
+    <string name="notification_permission_skip">跳過</string>
 
     <!-- Error messages - Parse -->
     <string name="error_unknown">未知錯誤</string>

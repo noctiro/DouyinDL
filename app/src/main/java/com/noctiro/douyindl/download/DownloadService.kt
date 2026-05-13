@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import androidx.compose.runtime.mutableStateOf
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.noctiro.douyindl.MainActivity
@@ -22,7 +23,7 @@ import kotlinx.coroutines.cancel
 
 class DownloadService : Service() {
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var serviceScope: CoroutineScope? = null
     private lateinit var notificationManager: NotificationManager
     private var downloader: VideoDownloader? = null
 
@@ -37,8 +38,10 @@ class DownloadService : Service() {
 
         private const val ACTION_CANCEL = "com.noctiro.douyindl.ACTION_CANCEL_DOWNLOAD"
 
-        var currentDownloader: VideoDownloader? = null
-            private set
+        private val _currentDownloader = mutableStateOf<VideoDownloader?>(null)
+        var currentDownloader: VideoDownloader?
+            get() = _currentDownloader.value
+            private set(value) { _currentDownloader.value = value }
 
         var isRunning = false
             private set
@@ -52,13 +55,14 @@ class DownloadService : Service() {
             context.startForegroundService(intent)
         }
 
-        fun cancel(context: Context) {
+        fun cancel() {
             currentDownloader?.cancel()
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         notificationManager = getSystemService(NotificationManager::class.java)
         createNotificationChannel()
     }
@@ -66,12 +70,17 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL) {
             currentDownloader?.cancel()
+            stopSelf()
             return START_NOT_STICKY
         }
 
         val url = intent?.getStringExtra(EXTRA_URL) ?: return START_NOT_STICKY
         val title = intent.getStringExtra(EXTRA_TITLE) ?: ""
         val userAgent = intent.getStringExtra(EXTRA_USER_AGENT) ?: ""
+
+        if (isRunning) {
+            downloader?.cancel()
+        }
 
         val info = VideoInfo(url = url, title = title, videoId = "", userAgent = userAgent)
 
@@ -95,7 +104,8 @@ class DownloadService : Service() {
             val speedText = "${formatFileSize(speed)}/s"
             val etaText = if (eta > 0) formatEta(this, eta) else ""
             val subText = if (etaText.isNotEmpty()) "$speedText · $etaText" else speedText
-            val notification = buildProgressNotification(title, (progress * 100).toInt(), subText).build()
+            val sizeText = if (total > 0) "${formatFileSize(downloaded)} / ${formatFileSize(total)}" else formatFileSize(downloaded)
+            val notification = buildProgressNotification(title, (progress * 100).toInt(), subText, sizeText).build()
             notificationManager.notify(NOTIFICATION_ID, notification)
         }
 
@@ -113,7 +123,7 @@ class DownloadService : Service() {
             }
         }
 
-        dl.start(info, serviceScope)
+        dl.start(info, serviceScope!!)
         return START_NOT_STICKY
     }
 
@@ -121,9 +131,9 @@ class DownloadService : Service() {
 
     override fun onDestroy() {
         isRunning = false
-        currentDownloader = null
         downloader = null
-        serviceScope.cancel()
+        serviceScope?.cancel()
+        serviceScope = null
         super.onDestroy()
     }
 
@@ -137,7 +147,7 @@ class DownloadService : Service() {
         notificationManager.createNotificationChannel(channel)
     }
 
-    private fun buildProgressNotification(title: String, progress: Int, subText: String): NotificationCompat.Builder {
+    private fun buildProgressNotification(title: String, progress: Int, subText: String, sizeText: String = ""): NotificationCompat.Builder {
         val contentIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).apply {
@@ -152,10 +162,12 @@ class DownloadService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val contentText = if (sizeText.isNotEmpty()) "$title ($sizeText)" else title
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(getString(R.string.notification_downloading_title))
-            .setContentText(title)
+            .setContentText(contentText)
             .setSubText(subText)
             .setProgress(100, progress, progress == 0)
             .setOngoing(true)
@@ -165,44 +177,39 @@ class DownloadService : Service() {
     }
 
     private fun showCompleteNotification(title: String) {
-        val contentIntent = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(getString(R.string.notification_download_complete))
-            .setContentText(title)
-            .setAutoCancel(true)
-            .setContentIntent(contentIntent)
-            .build()
-
         stopForeground(STOP_FOREGROUND_REMOVE)
+        val notification = buildResultNotification(
+            icon = android.R.drawable.stat_sys_download_done,
+            titleRes = R.string.notification_download_complete,
+            content = title
+        )
         notificationManager.notify(NOTIFICATION_COMPLETE_ID, notification)
     }
 
     private fun showFailedNotification(title: String, reason: String?) {
-        val contentIntent = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle(getString(R.string.notification_download_failed))
-            .setContentText(reason ?: title)
-            .setAutoCancel(true)
-            .setContentIntent(contentIntent)
-            .build()
-
         stopForeground(STOP_FOREGROUND_REMOVE)
+        val notification = buildResultNotification(
+            icon = android.R.drawable.stat_notify_error,
+            titleRes = R.string.notification_download_failed,
+            content = reason ?: title
+        )
         notificationManager.notify(NOTIFICATION_COMPLETE_ID, notification)
     }
+
+    private fun buildResultNotification(icon: Int, titleRes: Int, content: String) =
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(icon)
+            .setContentTitle(getString(titleRes))
+            .setContentText(content)
+            .setAutoCancel(true)
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this, 0,
+                    Intent(this, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    },
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            )
+            .build()
 }

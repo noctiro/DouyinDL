@@ -6,7 +6,15 @@ import android.graphics.Bitmap
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -47,9 +57,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
-import coil3.ImageLoader
+import coil3.imageLoader
 import coil3.toBitmap
 import com.noctiro.douyindl.MainViewModel
 import com.noctiro.douyindl.R
@@ -81,7 +92,7 @@ internal fun VideoInfoCard(info: VideoInfo, vm: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             info.coverUrl?.let { url ->
-                AsyncImage(
+                SubcomposeAsyncImage(
                     model = url,
                     contentDescription = stringResource(R.string.cover_click_preview),
                     modifier = Modifier
@@ -89,7 +100,8 @@ internal fun VideoInfoCard(info: VideoInfo, vm: MainViewModel) {
                         .aspectRatio(16f / 9f)
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { showPreview = true },
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    loading = { ShimmerPlaceholder() }
                 )
             }
             Text(
@@ -138,7 +150,10 @@ private fun CoverPreviewDialog(coverUrl: String, title: String, onDismiss: () ->
                         .fillMaxWidth()
                         .weight(1f)
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { },
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { },
                     contentScale = ContentScale.Fit
                 )
                 FilledTonalButton(
@@ -182,10 +197,42 @@ private fun CoverPreviewDialog(coverUrl: String, title: String, onDismiss: () ->
     }
 }
 
+@Composable
+private fun ShimmerPlaceholder() {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer_translate"
+    )
+
+    val shimmerColors = listOf(
+        MaterialTheme.colorScheme.surfaceVariant,
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        MaterialTheme.colorScheme.surfaceVariant
+    )
+
+    val brush = Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset(translateAnim - 200f, 0f),
+        end = Offset(translateAnim, 0f)
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(brush)
+    )
+}
+
 private suspend fun saveCoverImage(context: Context, url: String, title: String) {
     withContext(Dispatchers.IO) {
         try {
-            val loader = ImageLoader(context)
+            val loader = context.imageLoader
             val request = ImageRequest.Builder(context)
                 .data(url)
                 .build()
