@@ -17,17 +17,24 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.File
 import java.io.FileInputStream
 import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.acos
+import kotlin.math.cbrt
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 enum class DownloadState {
     Idle, Downloading, Completed, Failed
@@ -39,6 +46,41 @@ fun interface DownloadProgressListener {
 
 fun interface DownloadCompleteListener {
     fun onComplete(state: DownloadState, failReason: String?)
+}
+
+private enum class SchedulerPhase { Probe, Formula, AIMD }
+
+private class SchedulerState(val fileSize: Long) {
+    @Volatile var phase: SchedulerPhase = SchedulerPhase.Probe
+    val targetN = AtomicInteger(initialNFor(fileSize))
+    @Volatile var currentChunkSize: Long = initialChunkFor(fileSize)
+    @Volatile var ewmaSpeed: Double = 0.0
+    val probeSamples = mutableListOf<Double>()
+    val consecutiveFailures = AtomicInteger(0)
+
+    // AIMD window state
+    val windowChunkCount = AtomicInteger(0)
+    val windowBytes = AtomicLong(0L)
+    @Volatile var windowStartTime: Long = System.currentTimeMillis()
+    @Volatile var lastWindowThroughput: Double = 0.0
+    var windowsSinceCalibration = 0
+
+    val mutex = Mutex()
+
+    companion object {
+        fun initialNFor(fileSize: Long): Int = when {
+            fileSize < 1L * 1024 * 1024 -> 1
+            fileSize < 10L * 1024 * 1024 -> 4
+            fileSize < 50L * 1024 * 1024 -> 8
+            else -> 12
+        }
+
+        fun initialChunkFor(fileSize: Long): Long = when {
+            fileSize < 1L * 1024 * 1024 -> fileSize
+            fileSize < 10L * 1024 * 1024 -> 1L * 1024 * 1024
+            else -> 2L * 1024 * 1024
+        }
+    }
 }
 
 class VideoDownloader(private val appContext: Context) {
@@ -78,15 +120,20 @@ class VideoDownloader(private val appContext: Context) {
 
     companion object {
         private const val BUFFER_SIZE = 8192
-        private const val SEGMENT_SIZE = 2L * 1024 * 1024
         private const val MAX_SEGMENT_RETRIES = 3
-
-        fun threadCountFor(fileSize: Long): Int = when {
-            fileSize < 1 * 1024 * 1024 -> 1
-            fileSize < 10 * 1024 * 1024 -> 2
-            fileSize < 50 * 1024 * 1024 -> 4
-            else -> 8
-        }
+        private const val N_MAX = 16
+        private const val CHUNK_MIN = 64L * 1024
+        private const val CHUNK_MAX = 4L * 1024 * 1024
+        private const val EWMA_ALPHA = 0.3
+        private const val PROBE_SAMPLE_COUNT = 10
+        private const val AIMD_WINDOW_CHUNKS = 5
+        private const val AIMD_INCREASE_THRESHOLD = 0.05
+        private const val AIMD_DECREASE_THRESHOLD = -0.10
+        private const val AIMD_EXPLORE_PROBABILITY = 0.10
+        private const val TARGET_CHUNK_DURATION_SEC = 3.0
+        private const val RECALIBRATION_WINDOWS = 10
+        private const val ANOMALY_FAILURE_THRESHOLD = 3
+        private const val T0_OVERHEAD = 0.1
     }
 
     fun start(info: VideoInfo, scope: CoroutineScope) {
@@ -156,30 +203,65 @@ class VideoDownloader(private val appContext: Context) {
                 raf.setLength(contentLength)
             }
 
-            val segments = buildSegments(contentLength)
-            val channel = Channel<Segment>(capacity = Channel.UNLIMITED)
-            for (segment in segments) { channel.send(segment) }
-            channel.close()
-
-            val workerCount = threadCountFor(contentLength)
+            val state = SchedulerState(contentLength)
+            val segmentChannel = Channel<Segment>(capacity = 16)
+            val scaleChannel = Channel<Int>(Channel.CONFLATED)
             val downloaded = AtomicLong(0L)
+            val activeWorkers = AtomicInteger(0)
+            val allDone = Channel<Unit>(Channel.UNLIMITED)
 
-            val progressJob = launch {
-                trackProgress(downloaded, contentLength)
+            val producerJob = launch(Dispatchers.Default) {
+                var offset = 0L
+                while (offset < contentLength) {
+                    val chunkSize = state.currentChunkSize
+                    val end = minOf(offset + chunkSize - 1, contentLength - 1)
+                    segmentChannel.send(Segment(offset, end))
+                    offset = end + 1
+                }
+                segmentChannel.close()
             }
 
-            try {
-                val workers = (0 until workerCount).map {
-                    async(Dispatchers.IO) {
-                        for (segment in channel) {
+            val progressJob = launch {
+                trackProgress(downloaded, contentLength, state)
+            }
+
+            fun spawnWorker() {
+                activeWorkers.incrementAndGet()
+                launch(Dispatchers.IO) {
+                    try {
+                        for (segment in segmentChannel) {
                             if (cancelled) break
-                            downloadSegmentWithRetry(info.url, info.userAgent, tempFile, segment, downloaded)
+                            downloadSegmentAdaptive(
+                                info.url, info.userAgent, tempFile,
+                                segment, downloaded, state, scaleChannel
+                            )
+                            if (activeWorkers.get() > state.targetN.get()) break
+                        }
+                    } finally {
+                        if (activeWorkers.decrementAndGet() == 0) {
+                            allDone.trySend(Unit)
                         }
                     }
                 }
-                workers.awaitAll()
+            }
+
+            repeat(state.targetN.get()) { spawnWorker() }
+
+            val scaleJob = launch {
+                for (newN in scaleChannel) {
+                    val active = activeWorkers.get()
+                    if (newN > active) {
+                        repeat(newN - active) { spawnWorker() }
+                    }
+                }
+            }
+
+            try {
+                producerJob.join()
+                allDone.receive()
             } finally {
                 progressJob.cancel()
+                scaleJob.cancel()
             }
 
             if (cancelled) {
@@ -209,40 +291,206 @@ class VideoDownloader(private val appContext: Context) {
         }
     }
 
-    private fun buildSegments(contentLength: Long): List<Segment> {
-        val segments = mutableListOf<Segment>()
-        var offset = 0L
-        while (offset < contentLength) {
-            val end = minOf(offset + SEGMENT_SIZE - 1, contentLength - 1)
-            segments.add(Segment(offset, end))
-            offset = end + 1
-        }
-        return segments
-    }
-
-    private fun downloadSegmentWithRetry(
+    private suspend fun downloadSegmentAdaptive(
         url: String,
         userAgent: String,
         file: File,
         segment: Segment,
-        downloaded: AtomicLong
+        downloaded: AtomicLong,
+        state: SchedulerState,
+        scaleChannel: Channel<Int>
     ) {
         var lastException: Exception? = null
+
         repeat(MAX_SEGMENT_RETRIES) { attempt ->
+            val attemptStart = System.currentTimeMillis()
             val before = downloaded.get()
             try {
                 downloadSegment(url, userAgent, file, segment, downloaded)
+                val duration = System.currentTimeMillis() - attemptStart
+                val segmentBytes = segment.end - segment.start + 1
+                state.consecutiveFailures.set(0)
+                onSegmentComplete(state, segmentBytes, duration, scaleChannel)
                 return
             } catch (e: Exception) {
                 val written = downloaded.get() - before
                 if (written > 0) downloaded.addAndGet(-written)
                 lastException = e
                 if (attempt < MAX_SEGMENT_RETRIES - 1) {
-                    Thread.sleep(500L * (attempt + 1))
+                    delay(500L * (attempt + 1))
                 }
             }
         }
+
+        onSegmentFailure(state, scaleChannel)
         throw lastException!!
+    }
+
+    private suspend fun onSegmentComplete(
+        state: SchedulerState,
+        segmentBytes: Long,
+        durationMs: Long,
+        scaleChannel: Channel<Int>
+    ) {
+        val speedBps = segmentBytes.toDouble() / (durationMs / 1000.0)
+
+        state.ewmaSpeed = if (state.ewmaSpeed == 0.0) speedBps
+        else EWMA_ALPHA * speedBps + (1 - EWMA_ALPHA) * state.ewmaSpeed
+
+        when (state.phase) {
+            SchedulerPhase.Probe -> handleProbeComplete(state, speedBps, scaleChannel)
+            SchedulerPhase.AIMD -> handleAIMDUpdate(state, segmentBytes, scaleChannel)
+            SchedulerPhase.Formula -> {}
+        }
+    }
+
+    private suspend fun handleProbeComplete(
+        state: SchedulerState,
+        speedBps: Double,
+        scaleChannel: Channel<Int>
+    ) {
+        state.mutex.withLock {
+            state.probeSamples.add(speedBps)
+
+            if (state.probeSamples.size >= PROBE_SAMPLE_COUNT) {
+                transitionToFormula(state, scaleChannel)
+            }
+        }
+    }
+
+    private fun transitionToFormula(state: SchedulerState, scaleChannel: Channel<Int>) {
+        state.phase = SchedulerPhase.Formula
+
+        val optimalN = solveOptimalN(state)
+        val chunkSize = (state.ewmaSpeed * TARGET_CHUNK_DURATION_SEC).toLong()
+            .coerceIn(CHUNK_MIN, CHUNK_MAX)
+
+        state.currentChunkSize = chunkSize
+        state.targetN.set(optimalN)
+        state.windowStartTime = System.currentTimeMillis()
+        state.windowChunkCount.set(0)
+        state.windowBytes.set(0L)
+        state.lastWindowThroughput = 0.0
+        state.windowsSinceCalibration = 0
+        state.phase = SchedulerPhase.AIMD
+
+        scaleChannel.trySend(optimalN)
+    }
+
+    private fun solveOptimalN(state: SchedulerState): Int {
+        val samples = state.probeSamples
+        if (samples.isEmpty()) return 1
+
+        val mu = samples.average()
+        if (mu <= 0) return 1
+
+        val variance = if (samples.size > 1) {
+            samples.sumOf { (it - mu).pow(2) } / (samples.size - 1)
+        } else {
+            (0.2 * mu).pow(2)
+        }
+        val sigma = sqrt(variance).coerceAtLeast(0.1 * mu)
+
+        val s = state.fileSize.toDouble()
+        val p = -(s / (mu * T0_OVERHEAD))
+        val q = -(2.0 * s * sigma * sigma / (mu * mu * mu * T0_OVERHEAD))
+
+        val discriminant = (q / 2.0).pow(2) + (p / 3.0).pow(3)
+
+        val n: Double = if (discriminant >= 0) {
+            val sqrtD = sqrt(discriminant)
+            val u = cbrt(-q / 2.0 + sqrtD)
+            val v = cbrt(-q / 2.0 - sqrtD)
+            u + v
+        } else {
+            val r = sqrt(-(p / 3.0).pow(3))
+            val theta = acos((-q / (2.0 * r)).coerceIn(-1.0, 1.0))
+            val roots = (0..2).map { k ->
+                2.0 * cbrt(r) * cos((theta + 2.0 * Math.PI * k) / 3.0)
+            }
+            roots.filter { it > 0 }.minOrNull() ?: 1.0
+        }
+
+        return n.roundToInt().coerceIn(1, N_MAX)
+    }
+
+    private suspend fun handleAIMDUpdate(
+        state: SchedulerState,
+        segmentBytes: Long,
+        scaleChannel: Channel<Int>
+    ) {
+        state.windowBytes.addAndGet(segmentBytes)
+        val count = state.windowChunkCount.incrementAndGet()
+
+        if (count >= AIMD_WINDOW_CHUNKS) {
+            state.mutex.withLock {
+                if (state.windowChunkCount.get() < AIMD_WINDOW_CHUNKS) return@withLock
+
+                val elapsed = (System.currentTimeMillis() - state.windowStartTime) / 1000.0
+                if (elapsed <= 0) return@withLock
+                val windowThroughput = state.windowBytes.get().toDouble() / elapsed
+
+                val prev = state.lastWindowThroughput
+                var newN = state.targetN.get()
+
+                if (prev > 0) {
+                    val delta = (windowThroughput - prev) / prev
+                    when {
+                        delta > AIMD_INCREASE_THRESHOLD && newN < N_MAX -> {
+                            newN++
+                        }
+                        delta < AIMD_DECREASE_THRESHOLD && newN > 1 -> {
+                            newN = maxOf(1, (newN * 0.8).toInt())
+                        }
+                        else -> {
+                            if (Math.random() < AIMD_EXPLORE_PROBABILITY) {
+                                val dir = if (Math.random() < 0.5) 1 else -1
+                                newN = (newN + dir).coerceIn(1, N_MAX)
+                            }
+                        }
+                    }
+                }
+
+                state.currentChunkSize = (state.ewmaSpeed * TARGET_CHUNK_DURATION_SEC).toLong()
+                    .coerceIn(CHUNK_MIN, CHUNK_MAX)
+
+                state.targetN.set(newN)
+                state.lastWindowThroughput = windowThroughput
+                state.windowChunkCount.set(0)
+                state.windowBytes.set(0L)
+                state.windowStartTime = System.currentTimeMillis()
+
+                state.windowsSinceCalibration++
+                if (state.windowsSinceCalibration >= RECALIBRATION_WINDOWS) {
+                    state.windowsSinceCalibration = 0
+                    state.probeSamples.clear()
+                    state.probeSamples.add(state.ewmaSpeed)
+                    val recalN = solveOptimalN(state)
+                    if (kotlin.math.abs(recalN - newN) > (newN * 0.2).toInt()) {
+                        newN = recalN
+                        state.targetN.set(newN)
+                    }
+                }
+
+                scaleChannel.trySend(newN)
+            }
+        }
+    }
+
+    private fun onSegmentFailure(state: SchedulerState, scaleChannel: Channel<Int>) {
+        val failures = state.consecutiveFailures.incrementAndGet()
+        if (failures >= ANOMALY_FAILURE_THRESHOLD) {
+            val newN = maxOf(1, state.targetN.get() / 2)
+            val newC = maxOf(CHUNK_MIN, state.currentChunkSize / 2)
+            state.targetN.set(newN)
+            state.currentChunkSize = newC
+            state.consecutiveFailures.set(0)
+            state.windowChunkCount.set(0)
+            state.windowBytes.set(0L)
+            state.windowStartTime = System.currentTimeMillis()
+            state.lastWindowThroughput = 0.0
+            scaleChannel.trySend(newN)
+        }
     }
 
     private fun downloadSegment(
@@ -279,9 +527,10 @@ class VideoDownloader(private val appContext: Context) {
         }
     }
 
-    private suspend fun trackProgress(downloaded: AtomicLong, total: Long) {
+    private suspend fun trackProgress(downloaded: AtomicLong, total: Long, @Suppress("UNUSED_PARAMETER") state: SchedulerState) {
         var lastBytes = 0L
         var lastTime = System.currentTimeMillis()
+        var smoothedSpeed = 0L
 
         while (true) {
             delay(500L)
@@ -293,10 +542,12 @@ class VideoDownloader(private val appContext: Context) {
                 val instantSpeed = (currentBytes - lastBytes) * 1000 / elapsed
                 lastBytes = currentBytes
                 lastTime = now
-                if (downloadSpeed == 0L) instantSpeed else (downloadSpeed * 3 + instantSpeed) / 4
+                if (smoothedSpeed == 0L) instantSpeed
+                else (smoothedSpeed * 3 + instantSpeed) / 4
             } else {
-                downloadSpeed
+                smoothedSpeed
             }
+            smoothedSpeed = speed
 
             val progress = currentBytes.toFloat() / total.toFloat()
             val eta = if (speed > 0) (total - currentBytes) / speed else -1L
@@ -308,7 +559,7 @@ class VideoDownloader(private val appContext: Context) {
                 etaSeconds = eta
             }
 
-            progressListener?.onProgress(progress, currentBytes, totalBytes, speed, eta)
+            progressListener?.onProgress(progress, currentBytes, total, speed, eta)
         }
     }
 
